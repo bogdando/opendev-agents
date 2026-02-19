@@ -1041,7 +1041,7 @@ Change-Id: I1234567890abcdef1234567890abcdef12345678
 - **Include limitations**: Mention known issues or future improvements needed
 - **Wrap at 72 characters**
 
-#### For Generative AI (Claude Code, ChatGPT, etc.)
+#### For Generative AI
 
 ```text
 Add user authentication module
@@ -1058,14 +1058,14 @@ Manual modifications were made for OpenStack-specific configuration
 handling, integration with existing keystone middleware, and
 custom error messages and logging.
 
-Generated-By: claude-code
+Generated-By: claude-4.6-opus-high
 Signed-off-by: Jane Doe <jane.doe@example.com>
 Closes-Bug: #2001234
 Implements: blueprint oauth2-authentication
 Change-Id: I1234567890abcdef1234567890abcdef12345678
 ```
 
-#### For Predictive AI (Copilot, Tabnine, etc.)
+#### For Predictive AI (code/auto completion)
 
 ```text
 Fix memory leak in compute manager
@@ -1084,7 +1084,7 @@ I used GitHub Copilot suggestions for the resource cleanup
 patterns and error handling blocks. The core logic and OpenStack-
 specific integration was written manually.
 
-Assisted-By: github-copilot
+Assisted-By: claude-4.6-sonnet-medium
 Signed-off-by: Jane Doe <jane.doe@example.com>
 Closes-Bug: #2001235
 Change-Id: I1234567890abcdef1234567890abcdef12345678
@@ -1120,17 +1120,20 @@ UpgradeImpact: Affects upgrade procedures
 # Gerrit tracking (auto-generated)
 Change-Id: I1234567890abcdef1234567890abcdef12345678
 ```
+**Never** add `JIRA:`, `rhbz#` references for git repositories in opendev or
+openstack namespaces. Only references to Launchpad bugs `*-Bug: #`, or blueprints
+`Implements: blueprint` are allowed.
 
 #### DCO Sign-off Requirements (REQUIRED)
 
-- **Every commit** must include `Signed-off-by: Your Name <your.email@example.com>`
-- **Use your real name** (no pseudonyms or anonymous contributions)
-- **Email must match** your Git configuration and Gerrit account
+- **Every commit** must include `Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>`
+- **Use real name** (no pseudonyms or anonymous contributions)
+- **Email must match** the Git configuration and Gerrit account
 - **Always use the -s flag** when committing:
 
 ```bash
-git config --global user.name "Your Real Name"
-git config --global user.email "your.email@example.com"
+git config --global user.name "Bohdan Dobrelia"
+git config --global user.email "bdobreli@redhat.com"
 git commit -s  # The -s flag adds Signed-off-by automatically
 ```
 
@@ -1242,7 +1245,7 @@ Install Gerrit Change-Id hook:
 
 ```bash
 # Install commit-msg hook
-scp -p -P 29418 username@review.opendev.org:hooks/commit-msg .git/hooks/
+scp -p -P 29418 bogdando@review.opendev.org:hooks/commit-msg .git/hooks/
 chmod +x .git/hooks/commit-msg
 
 # Verify Change-Id is present
@@ -1270,7 +1273,6 @@ echo "✓ Ready to push!"
 tox -e pep8
 # Address all issues
 git commit --amend -s
-git review
 ```
 
 **Unit test failures:**
@@ -1280,7 +1282,6 @@ git review
 tox -e py3 -- path/to/test_file.py:TestClass.test_method
 # Fix failing tests
 git commit --amend -s
-git review
 ```
 
 **Missing DCO sign-off:**
@@ -1288,17 +1289,15 @@ git review
 ```bash
 # Amend commit with sign-off
 git commit --amend -s
-git review
 ```
 
 **Missing Change-Id:**
 
 ```bash
 # Install hook and amend
-scp -p -P 29418 username@review.opendev.org:hooks/commit-msg .git/hooks/
+scp -p -P 29418 bogdando@review.opendev.org:hooks/commit-msg .git/hooks/
 chmod +x .git/hooks/commit-msg
 git commit --amend -s
-git review
 ```
 
 ## 15. IDE Integration Notes

@@ -998,10 +998,21 @@ Switch to new libvirt reset API
 
 ## 10. OpenInfra Foundation AI Policy and DCO Compliance
 
-### Commit Message Requirements (MANDATORY)
+### Commit Message Requirements (ALL REQUIRED MANDATORY)
 
 All AI-generated contributions MUST include proper commit message labeling per OpenInfra
-Foundation AI Policy AND Developer Certificate of Origin (DCO) sign-off:
+Foundation AI Policy AND Developer Certificate of Origin (DCO) sign-off
+
+- **Every commit** must include `Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>`
+- **Use real name** (no pseudonyms or anonymous contributions)
+- **Email must match** the Git configuration and Gerrit account
+- **Always use the -s flag** when committing:
+
+```bash
+git config --global user.name "Bohdan Dobrelia"
+git config --global user.email "bdobreli@redhat.com"
+git commit -s  # The -s flag adds Signed-off-by automatically
+```
 
 #### OpenStack Commit Message Structure
 
@@ -1018,7 +1029,7 @@ For AI contributions, explain the context and approach
 used with the AI tool, focusing on the technical decisions
 and reasoning behind the implementation.
 
-Generated-By: claude-code (or Assisted-By: github-copilot)
+Generated-By: Cusror Agent (Claude 4.6 Opus) (or Assisted-By:)
 Signed-off-by: Jane Doe <jane.doe@example.com>
 Closes-Bug: #1234567
 Change-Id: I1234567890abcdef1234567890abcdef12345678
@@ -1037,7 +1048,7 @@ Change-Id: I1234567890abcdef1234567890abcdef12345678
 - **Explain WHY first**: What problem does this solve?
 - **Explain WHAT**: What changes were made?
 - **Explain HOW**: Overall approach (for complex changes)
-- **Self-contained**: Don't assume reviewer has access to external bug trackers
+- **Self-contained**: Don't assume reviewer has access to external bug trackers.
 - **Include limitations**: Mention known issues or future improvements needed
 - **Wrap at 72 characters**
 
@@ -1124,19 +1135,6 @@ Change-Id: I1234567890abcdef1234567890abcdef12345678
 openstack namespaces. Only references to Launchpad bugs `*-Bug: #`, or blueprints
 `Implements: blueprint` are allowed.
 
-#### DCO Sign-off Requirements (REQUIRED)
-
-- **Every commit** must include `Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>`
-- **Use real name** (no pseudonyms or anonymous contributions)
-- **Email must match** the Git configuration and Gerrit account
-- **Always use the -s flag** when committing:
-
-```bash
-git config --global user.name "Bohdan Dobrelia"
-git config --global user.email "bdobreli@redhat.com"
-git commit -s  # The -s flag adds Signed-off-by automatically
-```
-
 ### AI Policy: Generated-By vs Assisted-By
 
 #### When to Use "Generated-By:"
@@ -1192,9 +1190,18 @@ When using AI tools, ALWAYS include:
 4. **Technical reasoning**: Explain the approach and decisions made
 5. **Review confirmation**: Implicitly demonstrate you reviewed all AI-generated code through your explanations
 
+### Commits structure (MANDATORY REQUIRED)
+
+FIXME, TODO, NOTE must come with the author nickname, like NOTE(bogdando)
+To reference an issue, use `bug 123` instead of `lp123` or prefixes like JIRA, rhbz
+
+Fix bugs in 2 commtis
+1. Only add a test to assert the current broken behavior with a FIXME comment
+2. Actual bug fix and updates for the test
+
 ## 13. Comprehensive Checklists
 
-### Legal Compliance Checklist (ALL REQUIRED)
+### Legal Compliance Checklist (ALL REQUIRED MANDATORY)
 
 - [ ] AI tool configured for open source compatibility
 - [ ] Generated code reviewed for copyright issues

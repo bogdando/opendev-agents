@@ -1,17 +1,9 @@
-# OpenStack Development Guidelines for Claude Code
+---
+description: Global instructions
+alwaysApply: true
+---
 
-# OpenStack Python Comprehensive Style Guide for AI Code Generation
-
-> **Comprehensive Guide**: Detailed explanations and examples for AI tools generating OpenStack-compliant Python code.
-> **For quick reference**: See the [OpenStack Python Quick Rules for AI](quick-version)
-> **For working templates**: See [docs/templates/](templates/) for ready-to-use code patterns
-> **For validation workflows**: See [docs/checklists/](checklists/) for pre-submit and review procedures
-
-## Overview for AI Assistants
-
-This guide provides specific instructions for AI coding assistants (Claude Code, aider, etc.)
-to generate Python code that meets OpenStack contribution standards. Follow these rules precisely
-to ensure code passes OpenStack's strict linting and review processes.
+# OpenStack Development Guidelines
 
 ## Project Structure
 
@@ -20,20 +12,25 @@ OpenStack projects typically follow standard Python project layout with:
 - Main code in `<project_name>/` directory
 - Tests in `<project_name>/tests/` directory
 - Configuration files: `tox.ini`, `setup.cfg`, `pyproject.toml` etc.
-- Many (but not all) projects use pre-commit. Where present, a `.pre-commit-config.yaml` file will be present. In this case, `pre-commit run` can typically be used to run linters, rather than using globally installed versions of e.g. `ruff`, `flake8`, `mypy` etc.
-- `pre-commit` is installed globally on this system, so you don't need to activate a virtualenv to run it.
+- Many (but not all) projects use pre-commit. Where present, a
+  `.pre-commit-config.yaml` file will be present. In this case, `pre-commit run`
+  can typically be used to run linters, rather than using globally installed
+  versions of e.g. `ruff`, `flake8`, `mypy` etc.
+- `pre-commit` is installed globally on this system, so you don't need to
+  activate a virtualenv to run it.
 
 ## Dependencies
 
-OpenStack projects use `pbr` instead of `setuptools` for packaging. `pbr` expects dependencies to be listed in `requirements.txt`, `test-requirements.txt` and `doc/requirements.txt` files. This may change in the future as pbr evolves.
+OpenStack projects use `pbr` instead of `setuptools` for packaging. `pbr`
+expects dependencies to be listed in `requirements.txt`, `test-requirements.txt`
+and `doc/requirements.txt`
 
 ## Modernization
 
-In addition to the addition of ruff and typing, we may wish to make other changes to projects to bring them up to modern standards. Below are guidelines for making these changes.
-
 ### Migration to `pyproject.toml`
 
-As noted above, OpenStack projects use `pbr` for packaging. `pbr` supports the same `pyproject.toml` format as `setuptools`. All projects should have the following `pyproject.toml` at a minimum:
+`pbr` supports the same `pyproject.toml` format as `setuptools`.
+All projects should have the following `pyproject.toml` at a minimum:
 
 ```toml
 [build-system]
@@ -41,15 +38,15 @@ requires = ["pbr>=6.0.0", "setuptools>=64.0.0"]
 build-backend = "pbr.build"
 ```
 
-To migrate the rest of the commands, note the following mappings:
+To migrate the rest of the commands:
 
 * Move `[metadata]` section in `setup.cfg` to `[project]` section
 * Move `[entry_points]` section in `setup.cfg` to `[project.entry-points]` section
 * Move `[extras]` section in `setup.cfg` to `[project.optional-dependencies]` section
 
-Also note that `dependencies` and `version` must be treated as `dynamic` since these are managed by `pbr`.
+`dependencies` and `version` must be treated as `dynamic` since these are managed by `pbr`.
 
-The `setup.cfg` file must currently be retained as a stub file containing only the following:
+The `setup.cfg` file must be retained as a stub file containing only:
 
 ```
 [metadata]
@@ -58,9 +55,9 @@ name = <project-name>
 
 The `setup.py` must be retained as-is.
 
-**Never use `setuptools-scm` or similar tools**. pbr will handle versioning for us.
+**Never use `setuptools-scm` or similar tools**. pbr handles versioning.
 
-## 1. Critical Code Generation Rules
+## Code Generation Rules
 
 ### ALWAYS Include Apache License Header
 
@@ -104,11 +101,14 @@ result = some_function(argument_one, argument_two, \
 
 ### Overview
 
-OpenStack projects have historically used hacking, a flake8 plugin, to enforce style across projects. Lately, a number of projects have migrated to ruff. This is typically run via pre-commit. If ruff configuration is present in `pyproject.toml` then ruff should be run after all changes. `ruff` can typically be run via pre-commit (`pre-commit run -a`).
+OpenStack projects use flake8 hacking plugin to enforce style across projects, or 'ruff'.
+Those are run via `pre-commit run -a`.
+If ruff config is present in `pyproject.toml` then run ruff in the end.
 
 ### Adding ruff to a new project
 
-If adding ruff to a new project, the following configuration should be used in `pyproject.toml`:
+If adding ruff to a new project:
+* Specify in `pyproject.toml`:
 
 ```toml
 [tool.ruff]
@@ -122,7 +122,7 @@ docstring-code-format = true
 select = ["E4", "E5", "E7", "E9", "F", "G", "LOG", "S", "UP"]
 ```
 
-You should also enable the ruff pre-commit hooks by adding them to `.pre-commit-config.yaml`. This will look like so:
+* Enable the ruff pre-commit hooks in `.pre-commit-config.yaml`:
 
 ```
 repos:
@@ -136,10 +136,10 @@ repos:
   # ... existing configuration
 ```
 
-These hooks should be placed before the hacking hook. The pyupgrade and bandit hooks should be removed if present.
-Once the hook has been added, you should ensure we are using the latest version of the ruff hook and all other hooks by running `pre-commit autoupdate`.
-
-Finally, you should disable all flake8 rules except the hacking rules. Do this in `tox.ini`:
+* Place it before the hacking hook.
+* Remove pyupgrade and bandit hooks, if present.
+* Apply `pre-commit autoupdate` after editing finished.
+* Disable flake8 rules except the hacking rules in `tox.ini`:
 
 ```ini
 [flake8]
@@ -149,8 +149,8 @@ select = H
 
 ### Imports
 
-- OpenStack projects group their imports into stdlib, third-party, and first-party groups.
-- OpenStack projects try to avoid importing objects and instead import modules.
+- OpenStack projects group imports into stdlib, third-party, and first-party groups.
+- Avoid importing objects and instead import modules.
 
   Do:
 
@@ -160,16 +160,18 @@ select = H
 
     from foo.bar import Baz
 
-  The only command exceptions to this are:
+  Exceptions:
 
   - `_` (from `<package>.i18n` or `<package>._i18n`
-  - Imports from `typing`, unless the project is already using the `import typing as ty` pattern.
+  - Imports from `typing`, unless the project is already using the `import
+    typing as ty` pattern.
 
-- OpenStack projects sort their imports by Python module path, treating `import foo.bar` and `from foo import bar` as identical.
+- OpenStack projects sort their imports by Python module path, treating `import foo.bar`
+  and `from foo import bar` as identical.
 
-## 2. Import Organization (Critical for AI)
+## Import Organization
 
-Always organize imports in exactly this order with blank lines between groups:
+* **Always** organize imports like this:
 
 ```python
 # Standard library (alphabetical)
@@ -189,10 +191,12 @@ from oslo_log import log
 from nova import exception
 from nova import utils
 ```
+* Within each group, separate `import X` from `from X import Y` statements into
+  sub-groups.
+* Avoid multiple imports per line (exceptions should always be
+  grouped: `collections.abc`, `types`, `typing`, `typing-extensions`).
 
-**AI Note**: Within each group, separate `import X` from `from X import Y` statements into sub-groups.
-
-## 9. Naming Conventions
+## Naming Conventions
 
 ### Variable and Function Names
 
@@ -224,14 +228,14 @@ class InvalidConfigurationError(Exception):
 
 ### Constants
 
+* Module-level constants:
 ```python
-# Module-level constants:
 DEFAULT_TIMEOUT = 30
 MAX_RETRY_ATTEMPTS = 3
 API_VERSION = '2.1'
 ```
 
-## 3. Function & Method Definitions
+## Function & Method Definitions
 
 ### Docstring Format (H404/H405 Compliance)
 
@@ -259,7 +263,7 @@ def process_items(items=[]):  # NEVER do this
     # process items
 ```
 
-## 6. Logging & String Formatting
+## Logging & String Formatting
 
 ### Logging with Delayed Interpolation
 
@@ -275,32 +279,35 @@ LOG.info('Processing {} items'.format(len(items)))
 
 ### String Formatting Preferences
 
+* Preferr regular strings:
 ```python
-# Preferred for regular strings:
 message = f'User {username} has {count} items'
-
-# For logging (delayed interpolation):
+```
+* For logging use delayed interpolation:
+```python
 LOG.debug('User %s has %d items', username, count)
-
-# Multiline strings:
+```
+* Wrap multiline strings:
+```python
 query = ("SELECT * FROM users "
          "WHERE active = true "
          "AND created_at > %s")
 ```
 
-## 7. Data Structure Formatting
+## Data Structure Formatting
 
 ### Dictionary Formatting
 
+* One key-value pair per line for readability:
 ```python
-# One key-value pair per line for readability:
 config = {
     'database_url': 'sqlite:///app.db',
     'debug': True,
     'timeout': 30,
 }
-
-# Trailing comma required for single-item tuples:
+```
+* Trailing comma required for single-item tuples:
+```python
 single_item = ('value',)  # Note the comma
 ```
 
@@ -315,7 +322,7 @@ results = [item.id for item in items if item.active]
 #           for item in sublist if complex_condition(item)]
 ```
 
-## 4. Exception Handling (Strictly Enforced)
+## Exception Handling
 
 ### Never Use Bare Except (H201)
 
@@ -335,14 +342,15 @@ except:  # H201 violation - will fail CI
 
 ### Specific Exception Patterns
 
+* Handle specific exceptions:
 ```python
-# Handle specific exceptions
 try:
     data = json.loads(response)
 except json.JSONDecodeError as e:
     raise InvalidDataError('Failed to parse JSON: %s' % e)
-
-# For re-raising, catching BaseException is acceptable
+```
+* For re-raising, catching BaseException is acceptable
+```python:
 try:
     critical_operation()
 except BaseException:
@@ -350,11 +358,11 @@ except BaseException:
     raise
 ```
 
-## 8. Exception Design Patterns
+## Exception Design Patterns
 
 ### Custom Exception Classes
 
-OpenStack projects use structured exception classes with message formatting:
+Use structured exception classes with message formatting:
 
 ```python
 class ModuleError(exception.BaseException):
@@ -397,7 +405,7 @@ def get_resource(self, resource_id):
         raise ModuleError(reason=str(e))
 ```
 
-## 9. OpenStack-Specific Patterns
+## OpenStack-Specific Patterns
 
 ### Configuration Options
 
@@ -433,7 +441,7 @@ with session.begin():
 
 ### Database Session Patterns
 
-OpenStack uses oslo.db with proper transaction management:
+Use oslo.db with proper transaction management:
 
 ```python
 from oslo_db import exception as db_exception
@@ -470,8 +478,8 @@ def update_instance(self, instance_id, updates):
 
 ### Database Query Patterns
 
+* Query with errors handling:
 ```python
-# Efficient querying with proper error handling
 def get_active_instances(self, limit=None):
     """Get active instances with optional limit."""
     try:
@@ -483,8 +491,9 @@ def get_active_instances(self, limit=None):
     except db_exception.DBError as e:
         LOG.exception("Database error fetching active instances")
         raise DatabaseError(reason=str(e))
-
-# Pagination for large result sets
+```
+* Paginate for large result sets:
+```python
 def list_instances(self, marker=None, limit=None):
     """List instances with pagination support."""
     try:
@@ -556,48 +565,57 @@ def create_resource(self, request, resource_data):
 - Use `webob.exc` for HTTP exceptions with proper explanations
 - Log unexpected errors with `LOG.exception()`
 - Return 201 status for resource creation
-- Always include error explanations in exception messages
+- **Always** include error explanations in exception messages
 
 ## Typing
 
-OpenStack projects are adding slowly adding type hints to projects. Where type hints are already present in a project, hints should be added to any new code.
-
-We use mypy as the type checker. **Always run mypy via tox** using `tox -e mypy`. Never run mypy directly or install it in a virtualenv manually. If type stub packages are missing (e.g., `types-requests`, `types-docutils`), add them to the `deps` section of the `[testenv:mypy]` environment in `tox.ini`.
-
-For some projects that haven't migrated, mypy may be run via pre-commit (`pre-commit run -a mypy`). Where the latter is still used, you should offer to migrate things to tox as a secondary task.
-
-All OpenStack projects require at least Python 3.10: therefore prefer native subscriptable types and other features added in that version. For example: prefer `list` over `typing.List`, `set` over `typing.Set`, and the pipe operator (`|`) over `typing.Union`
-
-While OpenStack doesn't generally allow more than one import per line, the following libraries are exceptions and should always be grouped: `collections.abc`, `types`, `typing`, `typing-extensions`.
+* Add type hints, if it is an established pattern for a project.
+* Use mypy as the type checker.
+* Prefer running mypy via `tox -e mypy`, or `pre-commit run -a mypy`, if
+  applicable as a fallback.
+* **Never** run mypy directly nor install it in a virtualenv manually.
+* If type stub packages are missing (`types-requests`, `types-docutils` etc),
+  add them to the `deps` section of `[testenv:mypy]` in `tox.ini`.
+* Require at least Python 3.10 (3.12 is preferable).
+* Prefer native subscriptable types and other native features, like:
+  - prefer `list` over `typing.List`
+  - `set` over `typing.Set`
+  - use the pipe operator (`|`) over `typing.Union`
 
 ### Handling untyped libraries
 
-The only mypy error code that may be disabled globally in `pyproject.toml` is `import-untyped`. All other errors must be handled with line-specific `# type: ignore[error-code]` comments.
-
-When a dependency has untyped functions (triggering `no-untyped-call` errors):
-
-1. First, check if the library is installed in the mypy tox environment: `.tox/mypy/bin/pip show <library>`
-2. Check if a type stub package exists: `.tox/mypy/bin/pip index versions types-<library>`
-3. If a type stub exists, add it to the `deps` section of `[testenv:mypy]` in `tox.ini`
-4. If no type stub exists, add `# type: ignore[no-untyped-call]` to the specific lines that call untyped functions
-
-This approach keeps type checking strict while only ignoring errors for specific calls that cannot be typed.
+* An only mypy error code that may be disabled globally in `pyproject.toml` is `import-untyped`.
+* Handle all other errors with line-specific `# type: ignore[error-code]` comments.
+* When a dependency has untyped functions (triggering `no-untyped-call` errors),
+  keep type checking strict while only ignoring errors for specific calls that cannot be typed:
+  - check if the library is installed in the mypy tox environment: `.tox/mypy/bin/pip show <library>`
+  - check if a type stub package exists: `.tox/mypy/bin/pip index versions types-<library>`
+  - if a type stub exists, add it to the `deps` section of `[testenv:mypy]` in `tox.ini`
+  - if no type stub exists, add `# type: ignore[no-untyped-call]` to the specific lines that
+    call untyped functions
 
 ### Type hint best practices
 
 When adding type hints:
 
-1. **Avoid `typing.Any`** - Use specific types wherever possible. `Any` defeats the purpose of type checking. Only use it as a last resort when the type is truly dynamic or unknowable.
+1. **Avoid `typing.Any`** - Use specific types wherever possible as `Any` defeats
+   the purpose of type checking. Only use it as a last resort when the type is truly dynamic
+   or unknowable.
 
-2. **Fix errors properly** - Don't add blanket `disable_error_code` entries to `pyproject.toml` as a permanent solution. These are acceptable as intermediate steps but should be resolved. Instead:
+2. **Fix errors properly** - Don't add blanket `disable_error_code` entries to `pyproject.toml`
+   as a permanent solution. These are acceptable as intermediate steps but should be resolved:
+   - for `import-not-found`: indicates a missing type stubs package or optional dependency.
+     Add the missing package to `tox.ini` `deps` or use `# type: ignore[import-not-found]`,
+     if absolutely necessary.
+   - for `attr-defined`: check if you're accessing the correct attribute; if the code is correct,
+     use a line-specific ignore
+   - For `arg-type`/`assignment`: Fix the type mismatch, or use `cast()` if the types are actually
+     compatible at runtime
+   Exception: `import-untyped` dependencies.
 
-   - For `import-not-found`: This normally indicates a missing type stubs package or optional dependency. Add the missing package to `tox.ini` `deps` or use `# type: ignore[import-not-found]` if absolutely necessary.
-   - For `attr-defined`: Check if you're accessing the correct attribute; if the code is correct, use a line-specific ignore
-   - For `arg-type`/`assignment`: Fix the type mismatch, or use `cast()` if the types are actually compatible at runtime
-
-   The only exception for this is `import-untyped` since we do have some dependencies that are untyped.
-
-3. **Preserve implementation behavior** - Never change the implementation or behavior of code just to satisfy mypy. Exhaust all typing solutions first (proper annotations, `cast()`, `TYPE_CHECKING` imports, Protocol classes, etc.)
+3. **Preserve implementation behavior** - **Never** change the implementation or behavior of code
+   just to satisfy mypy. Exhaust all typing solutions first (proper annotations, `cast()`,
+   `TYPE_CHECKING` imports, Protocol classes, etc.)
 
 4. **Use `TYPE_CHECKING` for circular imports** - When type hints create circular imports, use:
    ```python
@@ -606,13 +624,20 @@ When adding type hints:
        from module import SomeClass
    ```
 
-5. **Use `cast()` sparingly** - When you know a type is correct but mypy can't infer it, use `typing.cast()` rather than `# type: ignore`. This documents intent.
+5. **Use `cast()` sparingly** - When you know a type is correct but mypy can't infer it,
+  use `typing.cast()` rather than `# type: ignore`. This documents intent.
 
 ### Adding type hints to a new project
 
-Most projects should use ruff before adding typing. If the project doesn't have ruff, you should ask whether this should be integrated first or not. If it should, follow the steps in `Add ruff to a new project`.
+* Use ruff before adding typing.
+  - If the project doesn't have ruff, ask human whether this should be
+    integrated first or not.
+  - If it should, follow the steps in [Adding ruff to a new project](#adding-ruff-to-a-new-project).
 
-In addition, before you begin you should ensure that the relevant scaffolding is in place for the project. This requires changes to a number of files. First, to `pyproject.toml`:
+* Ensure that the relevant scaffolding is in place for the project.
+
+Scaffolding requires changes to a number of files.
+First, to `pyproject.toml`:
 
 ```toml
 [tool.mypy]
@@ -629,10 +654,10 @@ disallow_untyped_calls = false
 disallow_untyped_defs = false
 disallow_subclassing_any = false
 ```
+- Replace `{module}` with the relevant module.
+- Add the `Typing :: Typed` classifier in `[project] classifiers` in this file.
 
-(replace `{module}` with the relevant module).
-
-You should also add the `Typing :: Typed` classifier in `[project] classifiers` in this file. Next, `tox.ini`:
+Next, to `tox.ini`:
 
 ```ini
 [testenv:pep8]
@@ -655,12 +680,11 @@ deps =
 commands =
   mypy --cache-dir="{envdir}/mypy_cache" -p {module} {posargs}
 ```
+- Replace `{module}` with the relevant module
+- Use the `-p {module}` (package) syntax rather than a directory path, as editable
+  installs can cause issues with directory-based invocation.
 
-(once again replace `{module}` with the relevant module)
-
-Note: Use the `-p {module}` (package) syntax rather than a directory path, as editable installs can cause issues with directory-based invocation.
-
-You should also create a `{module}/py.typed` file.
+Also create a `{module}/py.typed` file.
 
 ## Testing
 
@@ -674,39 +698,42 @@ OpenStack projects use `tox` with `stestr` for testing, not `pytest`.
 - To run specific tests by module name: `tox -e py312 -- <module_path>`
     - Example: `tox -e py312 -- openstack_releases.tests.test_requirements`
 
-In the rare case that a test relies on an unreleased feature in another library, you can modify the virtualenv and install the local copy first. You can do this with the following steps:
+In the rare case that a test relies on an unreleased feature in another
+library, you can modify the virtualenv and install the local copy first. You
+can do this with the following steps:
 
 - Create the tox virtualenv but don't run tests: `tox -e py312 --notest`
 - Activate the tox virtualenv: `source .tox/py312/bin/activate`
-- Install the WIP version of the library from the local repo clone: `pip install -e ../<name-of-other-library>`
+- Install the WIP version of the library from the local repo clone:
+  `pip install -e ../<name-of-other-library>`
 - Deactivate the tox virtualenv: `deactivate`
 - Run tests as usual: `tox -e py313`
 
-Before doing this, you should ask me for the path to the local copy of the module.
+Before doing this, ask human for the path to the local copy of the module.
 
 ### Writing Tests
 
-All OpenStack projects use the standard Python `unittest` module for writing tests, with the following `unittest`-compatible libraries providing additional functionality:
-
+Use `unittest` module, with the following `unittest`-compatible libraries
+providing additional functionality:
 - `fixtures`: which are similar to pytest fixtures
 - `testtools`: which extends `unittest` to allow use of `fixtures`, among other things
-- `testscenarios`: to build matrices of tests, similar to parametrized test functions in pytest
+- `testscenarios`: to build matrices of tests, similar to parametrized test
+  functions in pytest
 - `ddt`: a simpler alternatives to `testscenarios`
 - `oslotest`: a collection of utilities that are used across most OpenStack services
 
-Before using such a library when writing tests, you should ensure the given library is already in use in the project. We should avoid bringing in new dependencies unless necessary.
+Before using such a library when writing tests, ensure the given library is already in
+use in the project. Avoid bringing in new dependencies unless absolutely necessary.
 
 ### Test Environment
 
-- Use Python 3.12 environment (`py312`) by default. This will change in the future as new version of Python are released and supported by OpenStack.
-- All OpenStack projects follow this pattern consistently
-- Tests are executed via `stestr` runner through `tox`
+All OpenStack projects follow this pattern consistently:
+- Use Python 3.12 environment (`py312`) by default.
+- Execute tests via `tox` via its `stestr` runner.
 
-## 5. Testing Code Generation
+## Testing Code Generation
 
 ### Test Structure with oslotest
-
-OpenStack projects use oslotest for consistent test patterns:
 
 ```python
 from oslotest import base
@@ -738,14 +765,15 @@ class TestResourceManager(base.BaseTestCase):
 
 ### Mock Usage (H210 - Recommended)
 
+Use `autospec=True`
 ```python
-# Always use autospec=True (recommended practice)
 @mock.patch('nova.utils.execute', autospec=True)
+```
+Exception: omit autospec when existing code doesn't follow this pattern, unless:
+- The existing mock pattern is causing test failures
+- You're adding new tests or substantially refactoring existing ones
 
-# Exception: When editing existing code that doesn't follow this pattern
-# maintain consistency with existing code rather than forcing changes unless:
-# 1. The existing mock pattern is causing test failures
-# 2. You're adding new tests or substantially refactoring existing ones
+```python
 def test_command_execution(self, mock_execute):
     mock_execute.return_value = ('output', '')
     # test code
@@ -820,7 +848,7 @@ from unittest import mock
 from mock import patch  # H216 violation
 ```
 
-## 4. Context-Aware Best Practices
+## Context-Aware Best Practices
 
 ### When Editing Existing Code
 
@@ -866,9 +894,11 @@ Before generating code, verify:
 - [ ] AI tool configured for open source compatibility
 - [ ] **DCO sign-off ready** (git commit -s)
 - [ ] Commit subject line ≤ 50 characters, imperative mood
-- [ ] Commit body explains WHY and WHAT, wrapped at 72 characters
+- [ ] Commit body explains WHY (problem statement) and WHAT (solution), omit HOW
+  (implementation details): **always** wrapped at 72 characters, in active voice,
+  imperative mood
 
-## 12. Common Anti-Patterns to Avoid
+## Common Anti-Patterns to Avoid
 
 For complete examples of anti-patterns to avoid, see
 [docs/examples/bad/anti_patterns.py](examples/bad/anti_patterns.py) which demonstrates
@@ -996,7 +1026,7 @@ Generated-By: claude-code
 Switch to new libvirt reset API
 ```
 
-## 10. OpenInfra Foundation AI Policy and DCO Compliance
+## OpenInfra Foundation AI Policy and DCO Compliance
 
 ### Commit Message Requirements (ALL REQUIRED MANDATORY)
 
@@ -1022,7 +1052,8 @@ Follow this exact format for all commits:
 Subject line: imperative, < 50 chars, no period
 
 Body paragraph explaining the WHY and WHAT of the change.
-Wrap at 72 characters. Include enough detail for reviewers
+Wrap at 72 characters, imperative, active voice.
+Include enough detail for reviewers
 to understand the problem being solved and how the fix works.
 
 For AI contributions, explain the context and approach
@@ -1030,7 +1061,7 @@ used with the AI tool, focusing on the technical decisions
 and reasoning behind the implementation.
 
 Generated-By: Cusror Agent (Claude 4.6 Opus) (or Assisted-By:)
-Signed-off-by: Jane Doe <jane.doe@example.com>
+Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>
 Closes-Bug: #1234567
 Change-Id: I1234567890abcdef1234567890abcdef12345678
 ```
@@ -1057,9 +1088,9 @@ Change-Id: I1234567890abcdef1234567890abcdef12345678
 ```text
 Add user authentication module
 
-This module implements OAuth2 authentication for the API service
-to address security requirements for multi-tenant access. The
-implementation follows the existing Nova auth patterns but adds
+Implement OAuth2 authentication for the API service
+to address security requirements for multi-tenant access.
+Follows the existing Nova auth patterns but add
 support for token refresh and role-based permissions.
 
 I used Claude Code to generate the initial implementation based on
@@ -1070,13 +1101,13 @@ handling, integration with existing keystone middleware, and
 custom error messages and logging.
 
 Generated-By: claude-4.6-opus-high
-Signed-off-by: Jane Doe <jane.doe@example.com>
+Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>
 Closes-Bug: #2001234
 Implements: blueprint oauth2-authentication
 Change-Id: I1234567890abcdef1234567890abcdef12345678
 ```
 
-#### For Predictive AI (code/auto completion)
+#### For Predictive AI (code/auto completion only)
 
 ```text
 Fix memory leak in compute manager
@@ -1086,17 +1117,17 @@ instances were deleted, causing memory usage to grow over time
 in long-running compute services. This was particularly visible
 in environments with high instance turnover.
 
-The fix ensures that all event listeners and cached objects
-are properly cleaned up in the instance deletion path. Added
-explicit resource cleanup in the _delete_instance method and
-improved error handling to prevent partial cleanup states.
+Ensure that all event listeners and cached objects
+are properly cleaned up in the instance deletion path. Add
+explicit resource cleanup in the delete_instance method and
+improve error handling to prevent partial cleanup states.
 
 I used GitHub Copilot suggestions for the resource cleanup
 patterns and error handling blocks. The core logic and OpenStack-
 specific integration was written manually.
 
 Assisted-By: claude-4.6-sonnet-medium
-Signed-off-by: Jane Doe <jane.doe@example.com>
+Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>
 Closes-Bug: #2001235
 Change-Id: I1234567890abcdef1234567890abcdef12345678
 ```
@@ -1163,7 +1194,7 @@ Use **"Assisted-By:"** for **predictive AI** tools that provide suggestions or m
 - **Document AI contributions** - Explain what AI generated and what you modified
 - **Take responsibility** - Your DCO sign-off certifies you reviewed and approved all content
 
-## 11. AI-Specific Generation Guidelines
+## AI-Specific Generation Guidelines
 
 ### When Generating New Files
 
@@ -1195,11 +1226,11 @@ When using AI tools, ALWAYS include:
 FIXME, TODO, NOTE must come with the author nickname, like NOTE(bogdando)
 To reference an issue, use `bug 123` instead of `lp123` or prefixes like JIRA, rhbz
 
-Fix bugs in 2 commtis
+Prefer fixing bugs in 2 commtis
 1. Only add a test to assert the current broken behavior with a FIXME comment
 2. Actual bug fix and updates for the test
 
-## 13. Comprehensive Checklists
+## Comprehensive Checklists
 
 ### Legal Compliance Checklist (ALL REQUIRED MANDATORY)
 
@@ -1215,7 +1246,7 @@ Fix bugs in 2 commtis
 - [ ] Commit message explains WHY, WHAT, and HOW of the change
 - [ ] AI usage and technical approach documented in commit message
 
-## 14. Validation Workflows and Commands
+## Validation Workflows and Commands
 
 ### Pre-Commit Validation
 
@@ -1307,7 +1338,7 @@ chmod +x .git/hooks/commit-msg
 git commit --amend -s
 ```
 
-## 15. IDE Integration Notes
+## IDE Integration Notes
 
 For AI assistants working with IDEs:
 

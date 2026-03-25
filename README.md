@@ -1,3 +1,19 @@
+This aggregates and merges the AGENTS/CLAUDE sources:
+* https://github.com/stephenfin/openstack-agentsmd/blob/main/AGENTS.md
+* https://github.com/SeanMooney/openstack-ai-style-guide/blob/master/docs/comprehensive-guide.md
+
+and skills:
+* https://github.com/gthiemonge/openstack-review-claude-skill
+
+...and also goes slightly beyond by making an attempt of defining AI-agents agnostic frameworks
+for integration of local rules with external systems, with the main purpose of deduplicating
+rules and separating "upstream" guide lines from "downstream" implementation.
+
+AI quote of a day
+=================
+
+> Everyone speaks MCP. Almost no one has a pluggable RAG interface natively. So if you build a RAG system as an MCP server, it works everywhere without vendor lock-in.
+
 Applying for misc shell agents
 ==============================
 

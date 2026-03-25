@@ -1,0 +1,127 @@
+---
+description: Database session, query, transaction, and migration patterns using oslo.db
+globs:
+  - "**/db/**/*.py"
+  - "**/migration*.py"
+  - "**/models.py"
+  - "**/alembic/**/*.py"
+  - "**/objects/**/*.py"
+---
+
+# Database Patterns
+
+## Context Managers for Resources
+
+```python
+# Always use context managers:
+with open('/etc/nova/nova.conf') as config_file:
+    config_data = config_file.read()
+
+# For database connections:
+with session.begin():
+    instance = session.query(Instance).filter_by(uuid=uuid).one()
+    instance.update(updates)
+```
+
+## Database Session Patterns
+
+Use oslo.db with proper transaction management:
+
+```python
+from oslo_db import exception as db_exception
+
+def create_instance(self, instance_data):
+    """Create a new database instance with proper error handling."""
+    try:
+        with self.session.begin():
+            instance = Instance(**instance_data)
+            self.session.add(instance)
+            self.session.flush()  # Get ID without committing
+            return instance
+    except db_exception.DBDuplicateEntry:
+        LOG.error("Instance %s already exists", instance_data['name'])
+        raise InstanceExistsError(name=instance_data['name'])
+    except db_exception.DBError as e:
+        LOG.exception("Database error creating instance")
+        raise DatabaseError(reason=str(e))
+
+def update_instance(self, instance_id, updates):
+    """Update instance with atomic transaction."""
+    try:
+        with self.session.begin():
+            instance = self.session.query(Instance).filter_by(
+                id=instance_id).with_for_update().one()
+            if not instance:
+                raise InstanceNotFoundError(instance_id=instance_id)
+            instance.update(updates)
+            return instance
+    except db_exception.DBError as e:
+        LOG.exception("Failed to update instance %s", instance_id)
+        raise DatabaseError(reason=str(e))
+```
+
+## Database Query Patterns
+
+* Query with error handling:
+```python
+def get_active_instances(self, limit=None):
+    """Get active instances with optional limit."""
+    try:
+        query = self.session.query(Instance).filter_by(
+            deleted=False, active=True)
+        if limit:
+            query = query.limit(limit)
+        return query.all()
+    except db_exception.DBError as e:
+        LOG.exception("Database error fetching active instances")
+        raise DatabaseError(reason=str(e))
+```
+* Paginate for large result sets:
+```python
+def list_instances(self, marker=None, limit=None):
+    """List instances with pagination support."""
+    try:
+        query = self.session.query(Instance).filter_by(deleted=False)
+        if marker:
+            query = query.filter(Instance.id > marker)
+        if limit:
+            query = query.limit(limit + 1)  # +1 to check for more
+        instances = query.all()
+        has_more = len(instances) > limit if limit else False
+        if has_more:
+            instances = instances[:-1]  # Remove the extra
+        return instances, has_more
+    except db_exception.DBError as e:
+        LOG.exception("Error listing instances")
+        raise DatabaseError(reason=str(e))
+```
+
+## Database Testing Patterns
+
+```python
+def test_database_transaction_rollback(self):
+    """Test transaction rollback on error."""
+    with mock.patch.object(self.manager.session, 'begin') as mock_begin:
+        mock_begin.side_effect = db_exception.DBError("Connection failed")
+
+        self.assertRaises(DatabaseError, self.manager.create_resource,
+                         {'name': 'test'})
+
+        # Verify transaction was attempted
+        mock_begin.assert_called_once()
+
+def test_pagination_logic(self):
+    """Test pagination edge cases."""
+    # Test limit boundary
+    instances, has_more = self.manager.list_instances(limit=10)
+    self.assertLessEqual(len(instances), 10)
+
+    # Test marker functionality
+    with mock.patch.object(self.manager, 'session') as mock_session:
+        mock_session.query.return_value.filter_by.return_value.filter\
+            .return_value.limit.return_value.all.return_value = []
+
+        self.manager.list_instances(marker='last-id')
+        mock_session.query.return_value.filter_by.return_value.filter\
+            .assert_called_with(Instance.id > 'last-id')
+```

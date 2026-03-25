@@ -1,0 +1,111 @@
+---
+description: oslo.messaging RPC patterns, logging interpolation, and notification code
+globs:
+  - "**/rpc.py"
+  - "**/rpcapi.py"
+  - "**/baserpc.py"
+  - "**/conductor/**/*.py"
+  - "**/notifications/**/*.py"
+  - "**/servicegroup/**/*.py"
+---
+
+# Messaging, RPC & Logging
+
+## Logging with Delayed Interpolation
+
+```python
+# Correct (H702/H904 compliant):
+LOG.info('Processing %d items', len(items))
+LOG.error(_('Failed to connect to %s'), server)  # Translatable
+
+# Wrong:
+LOG.info(f'Processing {len(items)} items')  # Immediate interpolation
+LOG.info('Processing {} items'.format(len(items)))
+```
+
+## String Formatting Preferences
+
+* Prefer regular strings:
+```python
+message = f'User {username} has {count} items'
+```
+* For logging use delayed interpolation:
+```python
+LOG.debug('User %s has %d items', username, count)
+```
+* Wrap multiline strings:
+```python
+query = ("SELECT * FROM users "
+         "WHERE active = true "
+         "AND created_at > %s")
+```
+
+## Exception Handling in RPC Code
+
+### Never Use Bare Except (H201)
+
+```python
+# Correct:
+try:
+    risky_operation()
+except (ValueError, TypeError) as e:
+    LOG.error('Operation failed: %s', e)
+
+# Wrong:
+try:
+    risky_operation()
+except:  # H201 violation - will fail CI
+    LOG.error('Something went wrong')
+```
+
+### Custom Exception Classes for RPC
+
+Use structured exception classes with message formatting:
+
+```python
+class ModuleError(exception.BaseException):
+    """Base exception for MODULE_NAME errors."""
+    msg_fmt = "An error occurred in MODULE_NAME: %(reason)s"
+
+class ResourceNotFoundError(ModuleError):
+    """Raised when a resource cannot be found."""
+    msg_fmt = "Resource %(resource_id)s not found"
+
+class InvalidConfigurationError(ModuleError):
+    """Raised when configuration is invalid."""
+    msg_fmt = "Invalid configuration: %(config_key)s = %(config_value)s"
+```
+
+**Key Pattern Rules:**
+
+- Inherit from appropriate OpenStack exception base class
+- Use `msg_fmt` for consistent message formatting
+- Support parameter substitution with `%(param)s` syntax
+- Create specific exception classes for different error types
+
+### Exception Usage in RPC Methods
+
+```python
+def get_resource(self, resource_id):
+    if not resource_id:
+        raise ValueError("resource_id cannot be empty")
+
+    try:
+        resource = self._fetch_from_database(resource_id)
+        if not resource:
+            raise ResourceNotFoundError(resource_id=resource_id)
+        return resource
+    except (ValueError, TypeError) as e:
+        LOG.error("Invalid resource_id format: %s", e)
+        raise InvalidInputError(reason=str(e))
+    except Exception as e:
+        LOG.exception("Unexpected error retrieving resource %s", resource_id)
+        raise ModuleError(reason=str(e))
+```
+
+## Canonical RPC Examples
+
+For oslo.messaging RPC setup patterns (`get_client`, `get_server`, `Target`),
+refer to these canonical implementations:
+- Nova: `nova/rpc.py`, `nova/compute/rpcapi.py`, `nova/conductor/rpcapi.py`
+- Cyborg: `cyborg/conductor/rpcapi.py`, `cyborg/conductor/manager.py`

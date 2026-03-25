@@ -1,0 +1,37 @@
+---
+description: oslo.config option definitions and CONF usage patterns
+globs:
+  - "**/conf/**/*.py"
+  - "**/conf/*.py"
+---
+
+# Oslo Configuration Options
+
+## Configuration Options Pattern
+
+```python
+from oslo_config import cfg
+
+CONF = cfg.CONF
+
+# Define options clearly:
+api_opts = [
+    cfg.IntOpt('timeout',
+               default=30,
+               help='API request timeout in seconds'),
+    cfg.StrOpt('endpoint',
+               help='Service endpoint URL'),
+]
+
+CONF.register_opts(api_opts, group='api')
+```
+
+## Key Conventions
+
+- Define options in `<project>/conf/<subsystem>.py` modules
+- Aggregate all options via a `list_opts()` function in `<project>/conf/opts.py`
+- Register entry points in `pyproject.toml` under `[project.entry-points."oslo.config.opts"]`
+- Use `cfg.CONF` as the global config object
+- Group related options with the `group` parameter
+- Always provide `help` text for every option
+- Use appropriate option types: `IntOpt`, `StrOpt`, `BoolOpt`, `ListOpt`, `FloatOpt`, etc.

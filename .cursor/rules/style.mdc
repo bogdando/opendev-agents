@@ -1,0 +1,347 @@
+---
+description: Hacking violations and anti-patterns to avoid in all Python code
+globs:
+  - "**/*.py"
+---
+
+# Code Generation Rules
+
+**ALWAYS** Include Apache License Header
+
+Every Python file MUST start with:
+
+```python
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+```
+
+## Line Length & Formatting
+
+- **Maximum 79 characters per line** (strictly enforced)
+- Use 4 spaces for indentation (never tabs)
+- UNIX line endings (`\n`) only
+- Break long lines using parentheses, not backslashes:
+
+```python
+# Correct:
+result = some_function(
+    argument_one,
+    argument_two,
+    argument_three
+)
+
+# Wrong:
+result = some_function(argument_one, argument_two, \
+                      argument_three)
+```
+
+## Imports
+
+- OpenStack projects group imports into stdlib, third-party, and first-party groups.
+- Avoid importing objects and instead import modules.
+
+  Do:
+
+    from foo import bar
+
+  Don't do:
+
+    from foo.bar import Baz
+
+  Exceptions:
+
+  - `_` (from `<package>.i18n` or `<package>._i18n`
+  - Imports from `typing`, unless the project is already using the `import
+    typing as ty` pattern.
+
+- OpenStack projects sort their imports by Python module path, treating `import foo.bar`
+  and `from foo import bar` as identical.
+
+## Import Organization
+
+* **Always** organize imports like this:
+
+```python
+# Standard library (alphabetical)
+import json
+import os
+import sys
+
+# Third-party libraries (alphabetical)
+import oslo_config
+import requests
+
+# OpenStack libraries (alphabetical)
+from oslo_config import cfg
+from oslo_log import log
+
+# Local project imports (alphabetical)
+from nova import exception
+from nova import utils
+```
+* Within each group, separate `import X` from `from X import Y` statements into
+  sub-groups.
+* Avoid multiple imports per line (exceptions should always be
+  grouped: `collections.abc`, `types`, `typing`, `typing-extensions`).
+
+# Naming Conventions
+
+## Variable and Function Names
+
+```python
+# Correct:
+user_count = 10
+def get_active_users():
+    pass
+
+# Wrong:
+userCount = 10  # camelCase not allowed
+def GetActiveUsers():  # PascalCase for functions not allowed
+```
+
+## Class Names
+
+```python
+# Correct:
+class DatabaseManager:
+    pass
+
+class HTTPSConnection:
+    pass
+
+# Exception classes:
+class InvalidConfigurationError(Exception):
+    pass
+```
+
+## Constants
+
+* Module-level constants:
+```python
+DEFAULT_TIMEOUT = 30
+MAX_RETRY_ATTEMPTS = 3
+API_VERSION = '2.1'
+```
+
+# Function & Method Definitions
+
+## Docstring Format (H404/H405 Compliance)
+
+```python
+def fetch_resource(resource_id, timeout=30):
+    """Fetch a resource from the database.
+
+    :param resource_id: Unique identifier for the resource
+    :param timeout: Request timeout in seconds
+    :returns: Resource object or None if not found
+    :raises: ResourceNotFound if resource doesn't exist
+    """
+```
+
+## Argument Handling
+
+```python
+# Correct: Use None for mutable defaults
+def process_items(items=None):
+    items = items or []
+    # process items
+
+# Wrong: Mutable default arguments
+def process_items(items=[]):  # NEVER do this
+    # process items
+```
+
+# Data Structure Formatting
+
+## Dictionary Formatting
+
+* One key-value pair per line for readability:
+```python
+config = {
+    'database_url': 'sqlite:///app.db',
+    'debug': True,
+    'timeout': 30,
+}
+```
+* Trailing comma required for single-item tuples:
+```python
+single_item = ('value',)  # Note the comma
+```
+
+## List Comprehensions (Keep Simple)
+
+```python
+# Acceptable:
+results = [item.id for item in items if item.active]
+
+# Too complex - use regular loop instead:
+# results = [process(item) for sublist in nested_list
+#           for item in sublist if complex_condition(item)]
+```
+
+# Exception Handling
+
+## Never Use Bare Except (H201)
+
+```python
+# Correct:
+try:
+    risky_operation()
+except (ValueError, TypeError) as e:
+    LOG.error('Operation failed: %s', e)
+
+# Wrong:
+try:
+    risky_operation()
+except:  # H201 violation - will fail CI
+    LOG.error('Something went wrong')
+```
+
+## Specific Exception Patterns
+
+* Handle specific exceptions:
+```python
+try:
+    data = json.loads(response)
+except json.JSONDecodeError as e:
+    raise InvalidDataError('Failed to parse JSON: %s' % e)
+```
+* For re-raising, catching BaseException is acceptable
+```python:
+try:
+    critical_operation()
+except BaseException:
+    cleanup_resources()
+    raise
+```
+
+# Exception Design Patterns
+
+## Custom Exception Classes
+
+Use structured exception classes with message formatting:
+
+```python
+class ModuleError(exception.BaseException):
+    """Base exception for MODULE_NAME errors."""
+    msg_fmt = "An error occurred in MODULE_NAME: %(reason)s"
+
+class ResourceNotFoundError(ModuleError):
+    """Raised when a resource cannot be found."""
+    msg_fmt = "Resource %(resource_id)s not found"
+
+class InvalidConfigurationError(ModuleError):
+    """Raised when configuration is invalid."""
+    msg_fmt = "Invalid configuration: %(config_key)s = %(config_value)s"
+```
+
+**Key Pattern Rules:**
+
+- Inherit from appropriate OpenStack exception base class
+- Use `msg_fmt` for consistent message formatting
+- Support parameter substitution with `%(param)s` syntax
+- Create specific exception classes for different error types
+
+## Exception Usage Patterns
+
+```python
+def get_resource(self, resource_id):
+    if not resource_id:
+        raise ValueError("resource_id cannot be empty")
+
+    try:
+        resource = self._fetch_from_database(resource_id)
+        if not resource:
+            raise ResourceNotFoundError(resource_id=resource_id)
+        return resource
+    except (ValueError, TypeError) as e:
+        LOG.error("Invalid resource_id format: %s", e)
+        raise InvalidInputError(reason=str(e))
+    except Exception as e:
+        LOG.exception("Unexpected error retrieving resource %s", resource_id)
+        raise ModuleError(reason=str(e))
+```
+
+# Python Style Violations
+
+## Critical Violations (Will Fail CI)
+
+```python
+# H201 - Bare except (CRITICAL)
+try:
+    operation()
+except:  # NEVER use bare except
+    pass
+# Fix: except (ValueError, TypeError) as e:
+
+# H210 - Missing autospec in mock (CRITICAL)
+@mock.patch('module.function')  # Missing autospec=True
+def test_method(self, mock_func):
+    pass
+# Fix: @mock.patch('module.function', autospec=True)
+
+# H216 - Wrong mock import (CRITICAL)
+from mock import patch  # Third-party mock library
+# Fix: from unittest import mock
+
+# H304 - Relative imports
+from .utils import helper  # Don't use relative imports
+# Fix: from package.utils import helper
+
+# H702 - String formatting in logging (CRITICAL)
+LOG.info(f"Value: {val}")  # Immediate interpolation
+LOG.info("Value: {}".format(val))  # Also wrong
+# Fix: LOG.info("Value: %s", val)  # Delayed interpolation
+```
+
+## Code Quality Violations
+
+```python
+# H101 - TODO format
+# TODO fix this  # Missing author name
+# Fix: # TODO(yourname): Fix this issue
+
+# H105 - Author tags (don't use)
+# Author: Jane Doe  # Use version control instead
+# Fix: Remove author tags entirely
+
+# H106 - Vim configuration (don't use)
+# vim: syntax=python:tabstop=4:shiftwidth=4
+# Fix: Remove vim configuration entirely
+
+# H212 - Type checking with assertEqual
+assertEqual(type(obj), MyClass)  # Wrong approach
+# Fix: assertIsInstance(obj, MyClass)
+
+# H213 - Deprecated assertRaisesRegexp
+self.assertRaisesRegexp(ValueError, "pattern", func)  # Deprecated
+# Fix: self.assertRaises(ValueError, func)  # Or with context manager
+
+# H232 - Mutable default arguments
+def process_items(items=[]):  # Dangerous!
+    items.append('new')
+    return items
+# Fix: def process_items(items=None):
+#          items = items or []
+
+# H501 - locals() usage
+msg = "Error: %(error)s" % locals()  # Unclear what's being used
+# Fix: msg = "Error: %s" % error  # Explicit
+
+# H903 - UNIX line endings only
+# Files with Windows line endings (\r\n) will fail
+# Fix: Use UNIX line endings (\n) only
+```
+
+For complete examples of anti-patterns to avoid, see
+[docs/examples/bad/anti_patterns.py](examples/bad/anti_patterns.py) which demonstrates
+all common violations with explanations.

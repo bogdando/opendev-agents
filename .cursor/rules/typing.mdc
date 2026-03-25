@@ -1,0 +1,126 @@
+---
+description: Type hints, mypy configuration, and typing best practices for OpenStack projects
+globs:
+  - "**/*.py"
+  - "**/py.typed"
+  - "**/*.pyi"
+---
+
+# Typing & mypy
+
+* Add type hints, if it is an established pattern for a project.
+* Use mypy as the type checker.
+* Prefer running mypy via `tox -e mypy`, or `pre-commit run -a mypy`, if
+  applicable as a fallback.
+* **Never** run mypy directly nor install it in a virtualenv manually.
+* If type stub packages are missing (`types-requests`, `types-docutils` etc),
+  add them to the `deps` section of `[testenv:mypy]` in `tox.ini`.
+* Require at least Python 3.10 (3.12 is preferable).
+* Prefer native subscriptable types and other native features, like:
+  - prefer `list` over `typing.List`
+  - `set` over `typing.Set`
+  - use the pipe operator (`|`) over `typing.Union`
+
+## Handling untyped libraries
+
+* An only mypy error code that may be disabled globally in `pyproject.toml` is `import-untyped`.
+* Handle all other errors with line-specific `# type: ignore[error-code]` comments.
+* When a dependency has untyped functions (triggering `no-untyped-call` errors),
+  keep type checking strict while only ignoring errors for specific calls that cannot be typed:
+  - check if the library is installed in the mypy tox environment: `.tox/mypy/bin/pip show <library>`
+  - check if a type stub package exists: `.tox/mypy/bin/pip index versions types-<library>`
+  - if a type stub exists, add it to the `deps` section of `[testenv:mypy]` in `tox.ini`
+  - if no type stub exists, add `# type: ignore[no-untyped-call]` to the specific lines that
+    call untyped functions
+
+## Type hint best practices
+
+When adding type hints:
+
+1. **Avoid `typing.Any`** - Use specific types wherever possible as `Any` defeats
+   the purpose of type checking. Only use it as a last resort when the type is truly dynamic
+   or unknowable.
+
+2. **Fix errors properly** - Don't add blanket `disable_error_code` entries to `pyproject.toml`
+   as a permanent solution. These are acceptable as intermediate steps but should be resolved:
+   - for `import-not-found`: indicates a missing type stubs package or optional dependency.
+     Add the missing package to `tox.ini` `deps` or use `# type: ignore[import-not-found]`,
+     if absolutely necessary.
+   - for `attr-defined`: check if you're accessing the correct attribute; if the code is correct,
+     use a line-specific ignore
+   - For `arg-type`/`assignment`: Fix the type mismatch, or use `cast()` if the types are actually
+     compatible at runtime
+   Exception: `import-untyped` dependencies.
+
+3. **Preserve implementation behavior** - **Never** change the implementation or behavior of code
+   just to satisfy mypy. Exhaust all typing solutions first (proper annotations, `cast()`,
+   `TYPE_CHECKING` imports, Protocol classes, etc.)
+
+4. **Use `TYPE_CHECKING` for circular imports** - When type hints create circular imports, use:
+   ```python
+   from typing import TYPE_CHECKING
+   if TYPE_CHECKING:
+       from module import SomeClass
+   ```
+
+5. **Use `cast()` sparingly** - When you know a type is correct but mypy can't infer it,
+  use `typing.cast()` rather than `# type: ignore`. This documents intent.
+
+## Adding type hints to a new project
+
+* Use ruff before adding typing.
+  - If the project doesn't have ruff, ask human whether this should be
+    integrated first or not.
+  - If it should, follow the steps in the linting rule for adding ruff to a new project.
+
+* Ensure that the relevant scaffolding is in place for the project.
+
+Scaffolding requires changes to a number of files.
+First, to `pyproject.toml`:
+
+```toml
+[tool.mypy]
+python_version = "3.10"
+show_column_numbers = true
+show_error_context = true
+strict = true
+disable_error_code = ["import-untyped"]
+exclude = '(?x)(doc | releasenotes)'
+
+[[tool.mypy.overrides]]
+module = ["{module}.tests.*"]
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+disallow_subclassing_any = false
+```
+- Replace `{module}` with the relevant module.
+- Add the `Typing :: Typed` classifier in `[project] classifiers` in this file.
+
+Next, to `tox.ini`:
+
+```ini
+[testenv:pep8]
+description =
+  Run style checks.
+deps =
+  pre-commit
+  {[testenv:mypy]deps}
+commands =
+  pre-commit run -a
+  {[testenv:mypy]commands}
+
+[testenv:mypy]
+description =
+  Run type checks.
+deps =
+  {[testenv]deps}
+  mypy
+  types-docutils
+commands =
+  mypy --cache-dir="{envdir}/mypy_cache" -p {module} {posargs}
+```
+- Replace `{module}` with the relevant module
+- Use the `-p {module}` (package) syntax rather than a directory path, as editable
+  installs can cause issues with directory-based invocation.
+
+Also create a `{module}/py.typed` file.

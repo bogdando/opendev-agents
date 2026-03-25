@@ -1,0 +1,329 @@
+---
+description: Core OpenStack development standards
+alwaysApply: true
+---
+
+# OpenStack Development Guidelines
+
+## Project Structure
+
+OpenStack projects typically follow standard Python project layout with:
+
+- Main code in `<project_name>/` directory
+- Tests in `<project_name>/tests/` directory
+- Configuration files: `tox.ini`, `setup.cfg`, `pyproject.toml` etc.
+- Many (but not all) projects use pre-commit. Where present, a
+  `.pre-commit-config.yaml` file will be present. In this case, `pre-commit run`
+  can typically be used to run linters, rather than using globally installed
+  versions of e.g. `ruff`, `flake8`, `mypy` etc.
+- `pre-commit` is installed globally on this system, so you don't need to
+  activate a virtualenv to run it.
+
+## Context-Aware Best Practices
+
+### When Editing Existing Code
+
+When modifying existing OpenStack code files, follow these guidelines:
+
+#### Maintain Consistency Over Perfection
+
+- **Preserve existing patterns** even if they don't follow current recommendations
+- **Don't force refactors** just to align with best practices unless there's a compelling reason
+- **Match local conventions** used throughout the specific file or module
+
+#### Exceptions to Recommendations
+
+You may deviate from recommended practices when:
+
+1. **Consistency would be broken** - Existing code uses a different pattern consistently
+2. **Risk of introducing bugs** - Changing patterns could destabilize working code
+3. **Limited scope** - You're only fixing a specific bug, not refactoring
+4. **Downstream dependencies** - Other code depends on current implementation
+
+#### When to Apply Recommendations
+
+For new code or substantial refactors:
+
+1. **New files** - Follow all recommended practices
+2. **New methods/classes** - Use recommended patterns even in existing files
+3. **Test additions** - Apply best practices to new test code
+4. **Security fixes** - Update to current security practices
+5. **Performance improvements** - Modernize patterns for better performance
+
+### Error Prevention Checklist
+
+Before generating code, verify:
+
+- [ ] Line length <= 79 characters
+- [ ] No bare `except:` statements
+- [ ] `autospec=True` in all `@mock.patch` decorators (for new code)
+- [ ] Proper logging interpolation (use `%s`, not f-strings)
+- [ ] Specific exception handling
+- [ ] Apache license header present
+- [ ] Imports properly organized
+- [ ] "Generated-By:" or "Assisted-By:" label prepared for commit message
+- [ ] AI tool configured for open source compatibility
+- [ ] **DCO sign-off ready** (git commit -s)
+- [ ] Commit subject line <= 50 characters, imperative mood
+- [ ] Commit body explains WHY (problem statement) and WHAT (solution), omit HOW
+  (implementation details): **always** wrapped at 72 characters, in active voice,
+  imperative mood
+
+## OpenInfra Foundation AI Policy and DCO Compliance
+
+### Commit Message Requirements (ALL REQUIRED MANDATORY)
+
+All AI-generated contributions MUST include proper commit message labeling per OpenInfra
+Foundation AI Policy AND Developer Certificate of Origin (DCO) sign-off
+
+- **Every commit** must include `Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>`
+- **Use real name** (no pseudonyms or anonymous contributions)
+- **Email must match** the Git configuration and Gerrit account
+- **Always use the -s flag** when committing:
+
+```bash
+git config --global user.name "Bohdan Dobrelia"
+git config --global user.email "bdobreli@redhat.com"
+git commit -s  # The -s flag adds Signed-off-by automatically
+```
+
+#### OpenStack Commit Message Structure
+
+Follow this exact format for all commits:
+
+```text
+Subject line: imperative, < 50 chars, no period
+
+Body paragraph explaining the WHY and WHAT of the change.
+Wrap at 72 characters, imperative, active voice.
+Include enough detail for reviewers
+to understand the problem being solved and how the fix works.
+
+For AI contributions, explain the context and approach
+used with the AI tool, focusing on the technical decisions
+and reasoning behind the implementation.
+
+Generated-By: Cusror Agent (Claude 4.6 Opus) (or Assisted-By:)
+Signed-off-by: Bohdan Dobrelia <bdobreli@redhat.com>
+Closes-Bug: #1234567
+Change-Id: I1234567890abcdef1234567890abcdef12345678
+```
+
+#### Subject Line Rules (First Line - CRITICAL)
+
+- **Imperative mood**: "Add user auth" not "Added user auth" or "Adding user auth"
+- **Maximum 50 characters** (strictly enforced)
+- **No period** at the end
+- **Mention affected component**: Include "libvirt", "nova", "api", etc. when relevant
+- **Be specific**: "Fix memory leak in compute manager" not "Fix bug"
+
+#### Body Content Requirements
+
+- **Explain WHY first**: What problem does this solve?
+- **Explain WHAT**: What changes were made?
+- **Explain HOW**: Overall approach (for complex changes)
+- **Self-contained**: Don't assume reviewer has access to external bug trackers.
+- **Include limitations**: Mention known issues or future improvements needed
+- **Wrap at 72 characters**
+
+#### External References and Flags
+
+Place all metadata at the end in this order:
+
+```text
+# AI labeling (always first in metadata section)
+Generated-By: tool-name
+# or
+Assisted-By: tool-name
+
+# DCO sign-off (required after July 1, 2025)
+Signed-off-by: Real Name <email@domain.com>
+
+# Bug references
+Closes-Bug: #1234567      # Fully fixes the bug
+Partial-Bug: #1234567     # Partial fix, more work needed
+Related-Bug: #1234567     # Related but doesn't fix
+
+# Blueprint reference
+Implements: blueprint feature-name
+
+# Impact flags (when applicable)
+DocImpact: Changes require documentation updates
+APIImpact: Modifies public HTTP API
+SecurityImpact: Has security implications
+UpgradeImpact: Affects upgrade procedures
+
+# Gerrit tracking (auto-generated)
+Change-Id: I1234567890abcdef1234567890abcdef12345678
+```
+**Never** add `JIRA:`, `rhbz#` references for git repositories in opendev or
+openstack namespaces. Only references to Launchpad bugs `*-Bug: #`, or blueprints
+`Implements: blueprint` are allowed.
+
+#### Common Commit Message Anti-Patterns to Avoid
+
+```text
+# Too vague - doesn't explain what or why
+Fix bug
+
+# Missing component context
+Update configuration
+
+# Past tense instead of imperative
+Fixed the memory leak issue
+
+# Too long subject line (>50 chars)
+Fix the memory leak that occurs in compute manager during instance deletion
+
+# No explanation of AI usage
+Add new feature
+Generated-By: claude-code
+
+# Missing why/context
+Switch to new libvirt reset API
+```
+
+### AI Policy: Generated-By vs Assisted-By
+
+#### When to Use "Generated-By:"
+
+Use **"Generated-By:"** for **generative AI** tools that produce substantial code artifacts:
+
+- AI generated complete functions, classes, or modules
+- AI created the initial implementation that you then modified
+- Substantial portions of the code came from AI prompts
+- Examples: Claude Code, ChatGPT, GitHub Copilot (when accepting large completions)
+
+#### When to Use "Assisted-By:"
+
+Use **"Assisted-By:"** for **predictive AI** tools that provide suggestions or minor edits:
+
+- AI provided autocomplete suggestions you accepted
+- AI helped with minor refactoring or renaming
+- AI made small targeted changes based on prompts
+- Examples: GitHub Copilot (autocomplete), Tabnine, code formatting tools
+
+#### Key Principles (ALL AI Usage)
+
+- **Human must be in the loop** - Always review and understand AI-generated code
+- **Treat as untrusted source** - Apply the same scrutiny as code from unknown contributors
+- **Ensure open source compatibility** - Configure tools to respect licensing
+- **Document AI contributions** - Explain what AI generated and what you modified
+- **Take responsibility** - Your DCO sign-off certifies you reviewed and approved all content
+
+## AI-Specific Generation Guidelines
+
+### When Generating New Files
+
+1. Start with Apache license header
+2. Add module docstring
+3. Place module-level constants after docstring, before imports
+4. Organize imports per section 2
+5. Define classes and functions with proper docstrings
+
+### When Modifying Existing Files
+
+1. Preserve existing license headers
+2. Maintain import organization
+3. Follow existing code style in the file
+4. Add appropriate docstrings to new functions
+
+### AI-Specific Commit Message Guidelines
+
+When using AI tools, ALWAYS include:
+
+1. **Context provided**: Brief description of what guidance was given to the AI
+2. **AI contributions**: Which parts used AI assistance (structure, logic, patterns, etc.)
+3. **Manual modifications**: What you changed, added, or customized manually
+4. **Technical reasoning**: Explain the approach and decisions made
+5. **Review confirmation**: Implicitly demonstrate you reviewed all AI-generated code through your explanations
+
+### Commits structure (MANDATORY REQUIRED)
+
+FIXME, TODO, NOTE must come with the author nickname, like NOTE(bogdando)
+To reference an issue, use `bug 123` instead of `lp123` or prefixes like JIRA, rhbz
+
+Prefer fixing bugs in 2 commits
+1. Only add a test to assert the current broken behavior with a FIXME comment
+2. Actual bug fix and updates for the test
+
+### Legal Compliance Checklist (ALL REQUIRED MANDATORY)
+
+- [ ] AI tool configured for open source compatibility
+- [ ] Generated code reviewed for copyright issues
+- [ ] No proprietary claims by AI vendor on output
+- [ ] Code is compatible with Apache 2.0 license
+- [ ] Proper "Generated-By:" or "Assisted-By:" label added to commit
+- [ ] Context explanation included in commit message
+- [ ] **DCO sign-off included** (`Signed-off-by: Your Name <email>`)
+- [ ] **Real name and valid email** used in sign-off (no pseudonyms)
+- [ ] Commit message follows OpenStack structure (50 char subject, 72 char body)
+- [ ] Commit message explains WHY, WHAT, and HOW of the change
+- [ ] AI usage and technical approach documented in commit message
+
+## IDE Integration Notes
+
+For AI assistants working with IDEs:
+
+- Set line length markers at 79 characters
+- Configure to show whitespace and line endings
+- Enable PEP 8 checking plugins
+- Set Python indent to 4 spaces, no tabs
+- Configure AI tools for open source compatibility mode
+- Enable code duplication detection features
+
+## Validation Workflows and Commands
+
+### Pre-Commit Validation (ALL REQUIRED MANDATORY)
+
+After generating code, **always** run these validation commands:
+
+```bash
+# Syntax check all Python files
+python -m py_compile $(find . -name "*.py")
+
+# Style checks
+tox -e pep8
+# OR
+flake8 .
+
+# License header verification
+find . -name "*.py" -exec grep -L "Apache License" {} \;
+
+# Line length verification
+flake8 --select=E501 .
+
+# Import order verification
+flake8 --select=H301,H303,H304,H306 .
+
+# Hacking rules verification
+flake8 --select=H201,H210,H216,H501,H105,H106,H212 .
+
+# DCO sign-off verification
+git log -1 --pretty=%B | grep "Signed-off-by:"
+```
+
+### Git Hook Setup for Change-Id
+
+Install Gerrit Change-Id hook, once per a project:
+
+```bash
+# Install commit-msg hook
+scp -p -P 29418 bogdando@review.opendev.org:hooks/commit-msg .git/hooks/
+chmod +x .git/hooks/commit-msg
+
+# Verify Change-Id is present
+git log -1 --pretty=%B | grep "Change-Id:"
+```
+
+### Full Validation Pipeline
+
+```bash
+# Complete validation before pushing
+python -m py_compile $(find . -name "*.py") && \
+tox -e pep8 && \
+tox -e py3 && \
+git log -1 --pretty=%B | grep "Signed-off-by:" && \
+git log -1 --pretty=%B | grep "Change-Id:" && \
+echo "Ready to push!"
+```

@@ -17,7 +17,7 @@ AI quote of a day
 Applying for misc shell agents
 ==============================
 
-Globally:
+Globally (incuding claude code and cursor-agent tools):
 ```bash
 mkdir -p ~/.claude
 mkdir -p ~/.cursor
@@ -33,37 +33,49 @@ For a local project space, use its root dir instead.
 Applying for Cursor IDE
 =======================
 
-For a system global ruleset, copy and paste `.md` into AI rules in Cursor
-settings.
+This repo ships decomposed `.cursor/rules/*.mdc` files that activate based on
+which files you are editing (glob patterns derived from Nova and Cyborg directories
+layout). Copy or symlink the whole directory into each workspace root:
 
-For each or selected repo of a multi-root workspace:
 ```bash
-mkdir -p .cursor/rules
-ln -sf ~/.claude/CLAUDE.md .cursor/rules/claude-global.mdc
-```
-
-For example:
-```bash
-# auto-load by cursor as "global" for all projects' subsystems
 for dir in /opt/Projects/Openstack/gitrepos/*/; do
-  ln -sf ~/.claude/CLAUDE.md "$dir/AGENTS.md"
-done
-
-# installer rules per a subsystem defined via globs
-for dir in /opt/go/src/github.com/openstack-k8s-operators/*/; do
-  mkdir -p "$dir/.cursor/rules"
-  ln -sf ~/.claude/CLAUDE.md "$dir/.cursor/rules/claude-global.mdc"
+  # rm -f "$dir/AGENTS.md" , if applicable
+  ln -sfn "$(pwd)/.cursor" "$dir/.cursor"
 done
 ```
 
-NOTE: plain `.md` files must be added the frontmatter block:
+For a system-wide baseline that applies to every workspace regardless of
+project, copy and paste the contents of `base.mdc` into `Rules` of
+`Rules, Skills, Subagents` in Cursor settings.
+
+### Glob-to-Subsystem Mapping
+
+| Globs | Rule file | Subsystem |
+|-------|-----------|-----------|
+| *(always applied)* | `base.mdc` | License, formatting, imports, naming, commit/DCO/AI policy |
+| `**/*.py` | `style.mdc` | Hacking violations and anti-patterns to avoid |
+| `tox.ini`, `.pre-commit-config.yaml`, `**/hacking/**/*.py`, `HACKING.rst` | `linting.mdc` | Ruff/hacking tool setup, validation commands |
+| `**/tests/**/*.py`, `.stestr.conf` | `testing.mdc` | oslotest, mock/autospec, assertions, stestr |
+| `**/db/**/*.py`, `**/migration*.py`, `**/models.py`, `**/alembic/**/*.py`, `**/objects/**/*.py` | `database.mdc` | oslo.db sessions, queries, transactions, migrations |
+| `**/rpc.py`, `**/rpcapi.py`, `**/baserpc.py`, `**/conductor/**/*.py`, `**/notifications/**/*.py`, `**/servicegroup/**/*.py` | `messaging.mdc` | oslo.messaging RPC, logging interpolation |
+| `pyproject.toml`, `setup.cfg`, `setup.py`, `requirements.txt`, `test-requirements.txt`, `doc/requirements.txt`, `bindep.txt` | `packaging.mdc` | pbr, pyproject.toml migration, dependencies |
+| `**/conf/**/*.py`, `**/conf/*.py` | `oslo-config.mdc` | oslo.config option definitions, CONF patterns |
+| `**/api/**/*.py`, `**/api-paste.ini`, `**/policies/**/*.py`, `**/policy.py` | `api.mdc` | REST controllers, webob, policy |
+| `**/*.py`, `**/py.typed`, `**/*.pyi` | `typing.mdc` | mypy config, type hint best practices |
+
+Globs use `**/` prefixes so they work across any OpenStack project
+
+### Rule frontmatter reference
+
+Always-applied rule (no globs needed):
 ```yaml
 ---
 description: Global Claude instructions
 alwaysApply: true
 ---
 ```
-or for a sybsystem of a project
+
+Glob-activated rule for a project subsystem:
 ```yaml
 ---
 description: Testing of database conventions
@@ -72,7 +84,8 @@ globs:
   - "**/tests/**/db/**/*.py"
 ---
 ```
-or an empty glob as an advisory ruleset or MCP reference
+
+Empty-glob advisory rule or MCP reference (agent decides when to use it):
 ```yaml
 ---
 description: OpenStack deployment knowledge base

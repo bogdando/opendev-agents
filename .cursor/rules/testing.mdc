@@ -1,0 +1,207 @@
+---
+description: Test code patterns for OpenStack projects using oslotest, stestr, and unittest
+globs:
+  - "**/tests/**/*.py"
+  - ".stestr.conf"
+---
+
+# Testing
+
+OpenStack projects use `tox` with `stestr` for testing, not `pytest`.
+
+## Running Tests
+
+- To run all tests: `tox -e py312`
+- To run specific tests by file name: `tox -e py312 -- -n <test_file_path>`
+    - Example: `tox -e py312 -- -n openstack_releases/tests/test_requirements.py`
+- To run specific tests by module name: `tox -e py312 -- <module_path>`
+    - Example: `tox -e py312 -- openstack_releases.tests.test_requirements`
+
+In the rare case that a test relies on an unreleased feature in another
+library, you can modify the virtualenv and install the local copy first. You
+can do this with the following steps:
+
+- Create the tox virtualenv but don't run tests: `tox -e py312 --notest`
+- Activate the tox virtualenv: `source .tox/py312/bin/activate`
+- Install the WIP version of the library from the local repo clone:
+  `pip install -e ../<name-of-other-library>`
+- Deactivate the tox virtualenv: `deactivate`
+- Run tests as usual: `tox -e py313`
+
+Before doing this, ask human for the path to the local copy of the module.
+
+## Writing Tests
+
+Use `unittest` module, with the following `unittest`-compatible libraries
+providing additional functionality:
+- `fixtures`: which are similar to pytest fixtures
+- `testtools`: which extends `unittest` to allow use of `fixtures`, among other things
+- `testscenarios`: to build matrices of tests, similar to parametrized test
+  functions in pytest
+- `ddt`: a simpler alternatives to `testscenarios`
+- `oslotest`: a collection of utilities that are used across most OpenStack services
+
+Before using such a library when writing tests, ensure the given library is already in
+use in the project. Avoid bringing in new dependencies unless absolutely necessary.
+
+## Test Environment
+
+All OpenStack projects follow this pattern consistently:
+- Use Python 3.12 environment (`py312`) by default.
+- Execute tests via `tox` via its `stestr` runner.
+
+## Test Structure with oslotest
+
+```python
+from oslotest import base
+from unittest import mock
+
+class TestResourceManager(base.BaseTestCase):
+    """Test cases for ResourceManager class."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        super(TestResourceManager, self).setUp()
+        self.mock_session = mock.MagicMock()
+        self.manager = ResourceManager(session=self.mock_session)
+
+    def test_method_success(self):
+        """Test successful operation."""
+        # Setup
+        expected_result = mock.MagicMock()
+        self.mock_session.query.return_value.filter_by.return_value.first\
+            .return_value = expected_result
+
+        # Execute
+        result = self.manager.get_resource('test-id')
+
+        # Verify
+        self.assertEqual(expected_result, result)
+        self.mock_session.query.assert_called_once()
+```
+
+## Mock Usage (H210 - Recommended)
+
+Use `autospec=True`
+```python
+@mock.patch('nova.utils.execute', autospec=True)
+```
+Exception: omit autospec when existing code doesn't follow this pattern, unless:
+- The existing mock pattern is causing test failures
+- You're adding new tests or substantially refactoring existing ones
+
+```python
+def test_command_execution(self, mock_execute):
+    mock_execute.return_value = ('output', '')
+    # test code
+
+# Mock object methods with autospec
+with mock.patch.object(self.manager, '_save_to_database', autospec=True) as mock_save:
+    mock_save.return_value = expected_resource
+    result = self.manager.create_resource('test')
+    mock_save.assert_called_once()
+
+# Wrong - will fail H210 check:
+@mock.patch('nova.utils.execute')  # Missing autospec=True
+```
+
+## Advanced Assertion Patterns
+
+```python
+# Correct assertions (H203, H214, H212 compliant):
+self.assertIsNone(result)                    # Not assertEqual(None, result)
+self.assertIn('key', dictionary)             # Not assertTrue('key' in dictionary)
+self.assertEqual(expected, actual)            # Order matters
+self.assertIsInstance(obj, MyClass)            # Not assertEqual(type(obj), MyClass)
+self.assertRaises(SpecificException, func)     # Not generic Exception
+
+# Exception testing with context manager
+with self.assertRaises(ResourceNotFoundError):
+    self.manager.get_resource('nonexistent')
+
+# Multiple assertions in logical groups
+self.assertEqual(2, len(results))
+self.assertIn('item1', [r.id for r in results])
+self.assertIn('item2', [r.id for r in results])
+```
+
+## Database Testing Patterns
+
+```python
+def test_database_transaction_rollback(self):
+    """Test transaction rollback on error."""
+    with mock.patch.object(self.manager.session, 'begin') as mock_begin:
+        mock_begin.side_effect = db_exception.DBError("Connection failed")
+
+        self.assertRaises(DatabaseError, self.manager.create_resource,
+                         {'name': 'test'})
+
+        # Verify transaction was attempted
+        mock_begin.assert_called_once()
+
+def test_pagination_logic(self):
+    """Test pagination edge cases."""
+    # Test limit boundary
+    instances, has_more = self.manager.list_instances(limit=10)
+    self.assertLessEqual(len(instances), 10)
+
+    # Test marker functionality
+    with mock.patch.object(self.manager, 'session') as mock_session:
+        mock_session.query.return_value.filter_by.return_value.filter\
+            .return_value.limit.return_value.all.return_value = []
+
+        self.manager.list_instances(marker='last-id')
+        mock_session.query.return_value.filter_by.return_value.filter\
+            .assert_called_with(Instance.id > 'last-id')
+```
+
+## Import unittest.mock (H216)
+
+```python
+# Correct:
+from unittest import mock
+
+# Wrong:
+from mock import patch  # H216 violation
+```
+
+## Testing Violations
+
+```python
+# H202 - Testing for generic Exception
+def test_operation(self):
+    with self.assertRaises(Exception):  # Too broad
+        risky_operation()
+# Fix: with self.assertRaises(SpecificException):
+
+# H203 - Use assertIsNone/assertIsNotNone
+self.assertEqual(None, result)  # Less specific
+# Fix: self.assertIsNone(result)
+
+# H204 - Use assertEqual/assertNotEqual
+self.assertTrue(a == b)  # Less specific
+# Fix: self.assertEqual(a, b)
+
+# H205 - Use assertGreater/assertLess
+self.assertTrue(a > b)  # Less specific
+# Fix: self.assertGreater(a, b)
+
+# H211 - Use assertIsInstance
+self.assertTrue(isinstance(obj, MyClass))  # Verbose
+# Fix: self.assertIsInstance(obj, MyClass)
+
+# H214 - Use assertIn/assertNotIn
+self.assertTrue('key' in dictionary)  # Less specific
+# Fix: self.assertIn('key', dictionary)
+```
+
+## CI Failure Troubleshooting
+
+**Unit test failures:**
+
+```bash
+# Run specific failing test
+tox -e py3 -- path/to/test_file.py:TestClass.test_method
+# Fix failing tests
+git commit --amend -s
+```

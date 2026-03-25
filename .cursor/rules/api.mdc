@@ -1,0 +1,63 @@
+---
+description: REST API controller patterns, webob error handling, and policy enforcement
+globs:
+  - "**/api/**/*.py"
+  - "**/api-paste.ini"
+  - "**/policies/**/*.py"
+  - "**/policy.py"
+---
+
+# API Service Patterns
+
+OpenStack API controllers require specific error handling and response patterns:
+
+```python
+import webob.exc
+from oslo_log import log
+
+LOG = log.getLogger(__name__)
+
+def api_method(self, request, resource_id):
+    """Standard API method with proper error handling."""
+    context = request.environ['context']
+
+    try:
+        resource = self.manager.get_resource(context, resource_id)
+        return {'resource': resource}
+    except ResourceNotFoundError as e:
+        raise webob.exc.HTTPNotFound(
+            explanation=e.msg_fmt % e.kwargs)
+    except InvalidParameterError as e:
+        raise webob.exc.HTTPBadRequest(
+            explanation=e.msg_fmt % e.kwargs)
+    except Exception as e:
+        LOG.exception('Unexpected error in api_method')
+        raise webob.exc.HTTPInternalServerError()
+
+def create_resource(self, request, resource_data):
+    """Create resource with validation and proper error handling."""
+    context = request.environ['context']
+
+    try:
+        # Validate input
+        if not resource_data.get('name'):
+            raise InvalidParameterError(param='name', value='missing')
+
+        resource = self.manager.create_resource(context, resource_data)
+        return {'resource': resource}, 201  # Created status
+    except ResourceAlreadyExistsError as e:
+        raise webob.exc.HTTPConflict(
+            explanation=e.msg_fmt % e.kwargs)
+    except Exception as e:
+        LOG.exception('Failed to create resource')
+        raise webob.exc.HTTPInternalServerError()
+```
+
+## Key API Pattern Rules
+
+- Extract context from `request.environ['context']`
+- Catch specific exceptions and return appropriate HTTP status codes
+- Use `webob.exc` for HTTP exceptions with proper explanations
+- Log unexpected errors with `LOG.exception()`
+- Return 201 status for resource creation
+- **Always** include error explanations in exception messages

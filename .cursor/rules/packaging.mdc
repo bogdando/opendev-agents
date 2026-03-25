@@ -1,0 +1,49 @@
+---
+description: Python packaging with pbr, pyproject.toml migration, and dependency management
+globs:
+  - "pyproject.toml"
+  - "setup.cfg"
+  - "setup.py"
+  - "requirements.txt"
+  - "test-requirements.txt"
+  - "doc/requirements.txt"
+  - "bindep.txt"
+---
+
+# Project Packaging
+
+## Dependencies
+
+OpenStack projects use `pbr` instead of `setuptools` for packaging. `pbr`
+expects dependencies to be listed in `requirements.txt`, `test-requirements.txt`
+and `doc/requirements.txt`
+
+## Migration to `pyproject.toml`
+
+`pbr` supports the same `pyproject.toml` format as `setuptools`.
+All projects should have the following `pyproject.toml` at a minimum:
+
+```toml
+[build-system]
+requires = ["pbr>=6.0.0", "setuptools>=64.0.0"]
+build-backend = "pbr.build"
+```
+
+To migrate the rest of the commands:
+
+* Move `[metadata]` section in `setup.cfg` to `[project]` section
+* Move `[entry_points]` section in `setup.cfg` to `[project.entry-points]` section
+* Move `[extras]` section in `setup.cfg` to `[project.optional-dependencies]` section
+
+`dependencies` and `version` must be treated as `dynamic` since these are managed by `pbr`.
+
+The `setup.cfg` file must be retained as a stub file containing only:
+
+```
+[metadata]
+name = <project-name>
+```
+
+The `setup.py` must be retained as-is.
+
+**Never use `setuptools-scm` or similar tools**. pbr handles versioning.

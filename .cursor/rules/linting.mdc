@@ -1,0 +1,85 @@
+---
+description: Linter tool configuration for ruff, flake8/hacking, and pre-commit
+globs:
+  - "tox.ini"
+  - ".pre-commit-config.yaml"
+  - "**/hacking/**/*.py"
+  - "HACKING.rst"
+---
+
+# Linting Tool Configuration
+
+## Overview
+
+OpenStack projects use flake8 hacking plugin to enforce style across projects, or 'ruff'.
+Those are run via `pre-commit run -a`.
+If ruff config is present in `pyproject.toml` then run ruff in the end.
+
+## Adding ruff to a new project
+
+If adding ruff to a new project:
+* Specify in `pyproject.toml`:
+
+```toml
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.format]
+quote-style = "preserve"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = ["E4", "E5", "E7", "E9", "F", "G", "LOG", "S", "UP"]
+```
+
+* Enable the ruff pre-commit hooks in `.pre-commit-config.yaml`:
+
+```
+repos:
+  # ... existing configuration
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.10
+    hooks:
+      - id: ruff-check
+        args: ['--fix', '--unsafe-fixes']
+      - id: ruff-format
+  # ... existing configuration
+```
+
+* Place it before the hacking hook.
+* Remove pyupgrade and bandit hooks, if present.
+* Apply `pre-commit autoupdate` after editing finished.
+* Disable flake8 rules except the hacking rules in `tox.ini`:
+
+```ini
+[flake8]
+# We only enable the hacking (H) checks
+select = H
+```
+
+### CI Failure Troubleshooting
+
+**Common pep8 failures:**
+
+```bash
+# Fix locally
+tox -e pep8
+# Address all issues
+git commit --amend -s
+```
+
+**Missing DCO sign-off:**
+
+```bash
+# Amend commit with sign-off
+git commit --amend -s
+```
+
+**Missing Change-Id:**
+
+```bash
+# Install hook and amend
+scp -p -P 29418 bogdando@review.opendev.org:hooks/commit-msg .git/hooks/
+chmod +x .git/hooks/commit-msg
+git commit --amend -s
+```

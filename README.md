@@ -5,7 +5,7 @@ This aggregates and merges the AGENTS/CLAUDE sources:
 and skills:
 * https://github.com/gthiemonge/openstack-review-claude-skill
 
-...and also goes slightly beyond by making an attempt of defining AI-agents agnostic frameworks
+...and also goes [slightly beyond](./HUMANS.md) that by making an attempt of defining AI-agents agnostic frameworks
 for integration of local rules with external systems, with the main purpose of deduplicating
 rules and separating "upstream" guide lines from "downstream" implementation.
 

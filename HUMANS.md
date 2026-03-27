@@ -74,3 +74,11 @@ The thing that would be "REST for agents" - is a standardized architectural styl
 **Authorization scoping**: How does a tool server declare what permissions it needs? (REST had OAuth scopes; MCP has basic capability negotiation)
 
 **Contracts**: How does a project declare "I depend on these MCP capabilities"? (REST had OpenAPI specs vendored or linked; agents have prose in rule files)
+
+Workflows SDKs start filling pieces of the GAP with structured conventions:
+
+* [Ambient Code Workflows](https://github.com/ambient-code/workflows/blob/main/WORKFLOW_DEVELOPMENT_GUIDE.md) -
+  - phase-based composition via commands.
+  - artifact contracts via `results` field mapping output names to file globs,
+  - `ambient.json` for agent discovery,
+  - `settings.json` and `*mcp.json` define [Claude Code MCP integration](https://code.claude.com/docs/en/mcp) for declaring dependencies (not capabilities though!), which provides the most portable and agent-agnostic interface today, even though the scoping and management layer around it is Claude Code-specific.

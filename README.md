@@ -14,6 +14,18 @@ AI quote of a day
 
 > Everyone speaks MCP. Almost no one has a pluggable RAG interface natively. So if you build a RAG system as an MCP server, it works everywhere without vendor lock-in.
 
+Jira MCP servers for Cursor Agent
+=================================
+
+Requires Node.js runtime.
+Set required env vars:
+
+```bash
+export JIRATOKEN="your-jira-api-token"
+export JIRASPACE="https://yourorg.atlassian.net"
+export JIRAEMAIL="you@example.com"
+```
+
 Applying for misc shell agents
 ==============================
 
@@ -27,6 +39,9 @@ ln -sf ~/.claude/CLAUDE.md ~/.cursor/AGENTS.md
 
 cp -ar skills ~/.claude
 ln -sf ~/.claude/skills ~/.cursor
+
+cp .cursor/mcp.json ~/.claude
+ln -sf ~/.claude/mcp.json ~/.cursor
 ```
 For a local project space, use its root dir instead.
 

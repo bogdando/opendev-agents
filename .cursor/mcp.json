@@ -8,6 +8,13 @@
         "JIRA_BASE_URL": "${JIRASPACE}",
         "JIRA_USER_EMAIL": "${JIRAEMAIL}"
       }
+    },
+    "rag-knowledge": {
+      "command": "rag-mcp-server",
+      "env": {
+        "RAG_MCP_BACKEND": "mock",
+        "RAG_MCP_KNOWLEDGE_DIR": "./knowledge"
+      }
     }
   }
 }

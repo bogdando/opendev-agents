@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rag-mcp-server"
+version = "0.1.0"
+description = "Thin MCP server exposing RAG knowledge as searchable tools and URI-addressable resources"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "fastmcp>=3.2.0",
+    "pydantic-settings>=2.13.1",
+]
+
+[project.scripts]
+rag-mcp-server = "rag_mcp:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rag_mcp"]

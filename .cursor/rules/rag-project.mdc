@@ -1,0 +1,23 @@
+---
+description: Project-specific knowledge (specs, review history, release notes)
+globs: []
+---
+
+When answering questions about project architecture, design decisions,
+past review discussions, or release-specific changes, use the `search`
+tool from the `rag-knowledge` MCP server to retrieve project-specific
+context before responding.
+
+Pass `vector_store_id: "openstack-code"` to scope the search to project
+specs, architecture documents, commit history patterns, and review
+discussions.
+
+Example usage:
+- "Why was the Nova conductor introduced?" → search with
+  query "conductor architecture motivation" in openstack-code
+- "What changed in Cyborg's accelerator API for Epoxy?" → search with
+  query "accelerator API Epoxy release" in openstack-code
+
+Only invoke the search when the question requires historical project
+context or design rationale that goes beyond what the current codebase
+shows.

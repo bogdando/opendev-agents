@@ -1,0 +1,21 @@
+---
+description: OpenStack community knowledge (docs, deployment guides, API refs)
+globs: []
+---
+
+When answering questions about OpenStack deployment, networking, storage,
+compute, or API usage, use the `search` tool from the `rag-knowledge`
+MCP server to retrieve relevant community documentation before responding.
+
+Pass `vector_store_id: "openstack-docs"` to scope the search to upstream
+community documentation, deployment guides, and API references.
+
+Example usage:
+- "How does the Neutron L3 agent handle floating IPs?" → search with
+  query "L3 agent floating IP" in openstack-docs
+- "What are the Nova scheduler filter options?" → search with
+  query "scheduler filter" in openstack-docs
+
+Only invoke the search when the question is specifically about OpenStack
+internals, deployment, or API behavior — not for general Python or
+infrastructure questions.

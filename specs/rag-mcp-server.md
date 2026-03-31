@@ -19,6 +19,12 @@ to token budget, or filter by source. The `.mdc` rules remain prose.
 automated validation (does the referenced store exist? is the corpus current?),
 capability negotiation, and fully autonomous agentic SDLC workflows.
 
+**Implementation**: `src/rag_mcp/` — a FastMCP 3.x server with a pluggable
+backend interface. The initial `MockBackend` does keyword search over local
+markdown files in `knowledge/`. Advisory rules `rag-openstack.mdc` and
+`rag-project.mdc` point agents at the `rag-knowledge` MCP server configured
+in `.cursor/mcp.json`. See [README.md](../README.md) for setup.
+
 ## Motivation
 
 ### The closed pipeline problem

@@ -72,6 +72,8 @@ project, copy and paste the contents of `base.mdc` into `Rules` of
 | `**/conf/**/*.py`, `**/conf/*.py` | `oslo-config.mdc` | oslo.config option definitions, CONF patterns |
 | `**/api/**/*.py`, `**/api-paste.ini`, `**/policies/**/*.py`, `**/policy.py` | `api.mdc` | REST controllers, webob, policy |
 | `**/*.py`, `**/py.typed`, `**/*.pyi` | `typing.mdc` | mypy config, type hint best practices |
+| *(advisory, empty globs)* | `rag-openstack.mdc` | Community docs, deployment guides, API refs via RAG MCP |
+| *(advisory, empty globs)* | `rag-project.mdc` | Project specs, review history, release notes via RAG MCP |
 
 Globs use `**/` prefixes so they work across any OpenStack project
 
@@ -95,16 +97,41 @@ globs:
 ---
 ```
 
-Empty-glob advisory rule or MCP reference (agent decides when to use it):
+Empty-glob advisory rule pointing to the RAG MCP server (agent decides when to use it):
 ```yaml
 ---
-description: OpenStack deployment knowledge base
+description: OpenStack community knowledge (docs, deployment guides, API refs)
 globs: []
 ---
 
-When answering questions about OpenStack deployment, networking,
-storage, use the `search` tool from this `<https://rag-server>`
-MCP server to retrieve relevant documentation before answering.
+When answering questions about OpenStack deployment, networking, storage,
+use the `search` tool from the `rag-knowledge` MCP server with
+`vector_store_id: "openstack-docs"` to retrieve relevant documentation.
 ```
-Then you'd run an MCP server that exposes a search tool backed by
-a vector DB, Elasticsearch, or similar.
+
+RAG MCP Server
+==============
+
+A thin MCP server that exposes knowledge stores as searchable tools and
+URI-addressable resources. The agent gets formatted markdown injected
+directly into its context window. See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md).
+
+Install and run (mock backend with local markdown files):
+```bash
+pip install -e .
+rag-mcp-server  # stdio transport by default
+```
+
+Configuration via environment variables (prefix `RAG_MCP_`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RAG_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
+| `RAG_MCP_BACKEND` | `mock` | Backend type (`mock` for now) |
+| `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories |
+| `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
+| `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
+| `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
+
+The mock backend scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` — each
+subdirectory name becomes a `vector_store_id`. Add `.md` files to populate stores.

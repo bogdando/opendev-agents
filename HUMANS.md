@@ -84,7 +84,9 @@ Despite partial solutions above, no standardized architectural style yet answers
 
 ## Discovery
 
-How does an agent determine which MCP (Meta Control Plane) servers are available and what services they provide? In REST, the principle of HATEOAS (Hypermedia as the Engine of Application State) was used to enable dynamic discovery, but agent frameworks today lack such a standard. As a result, each solution invents its own configuration mechanism. Most existing frameworks restrict MCP usage to exposing Tools (actions), and notably, **no implementation leverages MCP Resources as a Retrieval-Augmented Generation (RAG) interface for sharing cross-project knowledge, even though the protocol is capable of it**.
+How does an agent determine which MCP servers are available and what services they provide? In REST, HATEOAS enabled dynamic discovery, but agent frameworks today lack such a standard — each invents its own configuration. Most existing frameworks restrict MCP usage to exposing Tools (actions), and notably, **no implementation leverages MCP Resources as a RAG interface for sharing cross-project knowledge, even though the protocol is capable of it**.
+
+RAG backends already exist — [llama-stack](https://github.com/llamastack/llama-stack) provides pluggable vector store providers with OpenAI-compatible `/v1/vector_stores/{id}/search` endpoints and built-in file search via the Responses API; [LiteLLM](https://docs.litellm.ai/docs/vector_stores/search) unifies vector store search behind the same OpenAI-compatible surface. The missing piece is not the backend but the **MCP server that exposes cross-project knowledge as Resources** (URI-addressable, e.g. `project://nova/api-standards`) alongside a search Tool — and a contract format for projects to declare which knowledge domains they publish and depend on.
 
 ## Composition
 

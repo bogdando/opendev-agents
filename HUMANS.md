@@ -32,10 +32,10 @@ Local files     →  MCP server    →  (future REST-like SDLC layer)
 
 ## Knowledge contracts
 
-Upstream declares what knowledge subsystems exist (style, testing, database, API, messaging...)
-Globs define activation context (which files trigger which rules)
-MCP references point to external knowledge without coupling to implementation
-Downstream fulfills the contracts however it wants
+Upstream declares what knowledge subsystems exist (style, testing, database, API, messaging...).
+Globs define activation context (which files trigger which rules).
+MCP references point to external knowledge without coupling to implementation.
+Downstream fulfills the contracts however it wants.
 
 Prior art:
 * [Ambient](https://github.com/ambient-code/workflows/blob/main/WORKFLOW_DEVELOPMENT_GUIDE.md): artifact contracts via `results` field mapping output names to file globs.
@@ -43,36 +43,36 @@ Prior art:
 
 ## Agent capability negotiation
 
-A project declares: "to contribute here, your agent needs access to: linting rules, test runner, Gerrit review API"
-CI validates that contributions were made with compliant tooling
-The 'Generated-By:' / 'Assisted-By:' labels are a primitive form of this already
+A project declares: "to contribute here, your agent needs access to: linting rules, test runner, Gerrit review API".
+CI validates that contributions were made with compliant tooling.
+The 'Generated-By:' / 'Assisted-By:' labels are a primitive form of this already.
 
 Prior art:
 * ARC: approved models/CLIs in guardrails, `required-permissions`, mandatory MCP servers that lower levels cannot remove. Skills declare `requires` dependencies and `mandatory` status.
 
 ## Quality gates as machine-readable contracts
 
-Not just "run tox -e pep8" in prose, but a structured declaration that any agent can consume
-Pre-commit, CI checks, review criteria expressed in a format agents can reason about
-The validation pipeline section in [linting.mdc](./.cursor/rules/linting.mdc) is manual prose today; it could be a structured contract tomorrow
+Not just "run tox -e pep8" in prose, but a structured declaration that any agent can consume.
+Pre-commit, CI checks, review criteria expressed in a format agents can reason about.
+The validation pipeline section in [linting.mdc](./.cursor/rules/linting.mdc) is manual prose today; it could be a structured contract tomorrow.
 
 Prior art:
 * ARC: `validate.py` deterministic post-sync check of merged settings vs guardrails,machine-readable coverage thresholds. Mandatory `session-recorder` skill for workflow audit trail.
 
 ## Knowledge lifecycle management
 
-How rules evolve, version, deprecate (your CLAUDE.md has no versioning)
-How downstream overrides upstream (no precedence mechanism exists)
-How conflicts between rules from different sources are resolved
+How rules evolve, version, deprecate (your CLAUDE.md has no versioning).
+How downstream overrides upstream (no precedence mechanism exists).
+How conflicts between rules from different sources are resolved.
 
 Prior art:
 * ARC: four-level merge hierarchy (org → component → repo → user), branch pinning via `ARC_REF`, deep-merge of MCP configs, decoupled config authoring from install locations.
 
 ## Feedback loops
 
-Agent learns from CI failures which rules it violated
-Review comments feed back into rule refinement
-RAG systems index past review discussions to improve future suggestions
+Agent learns from CI failures which rules it violated.
+Review comments feed back into rule refinement.
+RAG systems index past review discussions to improve future suggestions.
 
 Prior art:
 * ARC: structured workflow recordings uploaded to shared repo, manual feedback into rules.

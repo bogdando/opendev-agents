@@ -79,8 +79,11 @@ Prior art:
 
 # What's still missing?
 
-Despite partial solutions above, no standardized architectural style yet answers:
+*AI quote of a day*
 
+> Everyone speaks MCP. Almost no one has a pluggable RAG interface natively. So if you build a RAG system as an MCP server, it works everywhere without vendor lock-in.
+
+Despite partial solutions above, no standardized architectural style yet answers:
 
 ## Discovery
 

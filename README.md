@@ -9,11 +9,6 @@ and skills:
 for integration of local rules with external systems, with the main purpose of deduplicating
 rules and separating "upstream" guide lines from "downstream" implementation.
 
-AI quote of a day
-=================
-
-> Everyone speaks MCP. Almost no one has a pluggable RAG interface natively. So if you build a RAG system as an MCP server, it works everywhere without vendor lock-in.
-
 Jira MCP servers for Cursor Agent
 =================================
 

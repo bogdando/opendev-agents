@@ -40,6 +40,7 @@ Downstream fulfills the contracts however it wants.
 Prior art:
 * [Ambient](https://github.com/ambient-code/workflows/blob/main/WORKFLOW_DEVELOPMENT_GUIDE.md): artifact contracts via `results` field mapping output names to file globs.
 * [ARC](https://github.com/ansible-automation-platform/harness): `guardrails.arc.yaml` declares required files/sections per repo; locked instruction files are append-only at lower levels; `org.arc.mcp.json` declares MCP servers with `mandatory` flags. Does not have glob-based contextual activation (all rules load into a generated `CLAUDE.md`).
+* [Lightspeed](https://github.com/lightspeed-core/lightspeed-stack): BYOK ("bring your own knowledge") lets projects declare their own vector stores in `lightspeed-stack.yaml`; OKP (Offline Knowledge Portal). No formal contract format, declaring knowledge domains is config-driven.
 
 ## Agent capability negotiation
 
@@ -49,6 +50,7 @@ The 'Generated-By:' / 'Assisted-By:' labels are a primitive form of this already
 
 Prior art:
 * ARC: approved models/CLIs in guardrails, `required-permissions`, mandatory MCP servers that lower levels cannot remove. Skills declare `requires` dependencies and `mandatory` status.
+* Lightspeed: `LightspeedAgentsImpl` dynamically selects which MCP tools are available per request based on context. MCP servers declared in config with auth requirements; servers missing required auth are skipped gracefully.
 
 ## Quality gates as machine-readable contracts
 
@@ -57,7 +59,8 @@ Pre-commit, CI checks, review criteria expressed in a format agents can reason a
 The validation pipeline section in [linting.mdc](./.cursor/rules/linting.mdc) is manual prose today; it could be a structured contract tomorrow.
 
 Prior art:
-* ARC: `validate.py` deterministic post-sync check of merged settings vs guardrails,machine-readable coverage thresholds. Mandatory `session-recorder` skill for workflow audit trail.
+* ARC: `validate.py` deterministic post-sync check of merged settings vs guardrails, machine-readable coverage thresholds. Mandatory `session-recorder` skill for workflow audit trail.
+* Lightspeed: automated machine-readable safety shields as llama-stack providers - strips sensitive content from RAG responses, classifies input before processing.
 
 ## Knowledge lifecycle management
 
@@ -67,6 +70,7 @@ How conflicts between rules from different sources are resolved.
 
 Prior art:
 * ARC: four-level merge hierarchy (org → component → repo → user), branch pinning via `ARC_REF`, deep-merge of MCP configs, decoupled config authoring from install locations.
+* Lightspeed: version gating (`MINIMAL/MAXIMAL_SUPPORTED_LLAMA_STACK_VERSION`) ensures provider compatibility; flat layered config is split between `lightspeed-stack.yaml` (application concerns) and `run.yaml` (llama-stack providers).
 
 ## Feedback loops
 
@@ -76,6 +80,7 @@ RAG systems index past review discussions to improve future suggestions.
 
 Prior art:
 * ARC: structured workflow recordings uploaded to shared repo, manual feedback into rules.
+* Lightspeed: conversation persistence (`/v1/conversations`), explicit feedback API (`/v1/feedback`, `/v1/feedback/status`), telemetry export. Captures user feedback on responses - closest to a structured feedback loop, though not yet wired to rule refinement.
 
 # What's still missing?
 
@@ -83,17 +88,28 @@ Prior art:
 
 > Everyone speaks MCP. Almost no one has a pluggable RAG interface natively. So if you build a RAG system as an MCP server, it works everywhere without vendor lock-in.
 
-Despite partial solutions above, no standardized architectural style yet answers:
+The optimal architecture for such an interface seems to be hybrid:
+
+*agent → MCP server → RAG backend → vector DB*
+
+Despite prior art, no standardized architectural style yet answers:
 
 ## Discovery
 
-How does an agent determine which MCP servers are available and what services they provide? In REST, HATEOAS enabled dynamic discovery, but agent frameworks today lack such a standard — each invents its own configuration. Most existing frameworks restrict MCP usage to exposing Tools (actions), and notably, **no implementation leverages MCP Resources as a RAG interface for sharing cross-project knowledge, even though the protocol is capable of it**.
+How does an agent determine which MCP servers are available and what services they provide? In REST, HATEOAS enabled dynamic discovery, but agent frameworks today lack such a standard - each invents its own configuration. Most existing frameworks restrict MCP usage to exposing Tools (actions), and notably, **no implementation leverages MCP Resources as a RAG interface for sharing cross-project knowledge, even though the protocol is capable of it**.
 
-RAG backends already exist — [llama-stack](https://github.com/llamastack/llama-stack) provides pluggable vector store providers with OpenAI-compatible `/v1/vector_stores/{id}/search` endpoints and built-in file search via the Responses API; [LiteLLM](https://docs.litellm.ai/docs/vector_stores/search) unifies vector store search behind the same OpenAI-compatible surface. The missing piece is not the backend but the **MCP server that exposes cross-project knowledge as Resources** (URI-addressable, e.g. `project://nova/api-standards`) alongside a search Tool — and a contract format for projects to declare which knowledge domains they publish and depend on.
+RAG backends already exist:
+* [llama-stack](https://github.com/llamastack/llama-stack) provides pluggable vector store providers with OpenAI-compatible `/v1/vector_stores/{id}/search` endpoints and built-in file search via the Responses API.
+* [LiteLLM](https://docs.litellm.ai/docs/vector_stores/search) unifies vector store search behind the same OpenAI-compatible surface.
+* [Lightspeed Core Stack](https://github.com/lightspeed-core/lightspeed-stack) middleware on top of llama-stack: FastAPI gateway with auth, RAG orchestration (inline context injection + tool-based retrieval), MCP server management, safety shields, and pluggable vector IO.
+
+The missing piece is not the backend but the **MCP server that exposes cross-project knowledge as Resources** (URI-addressable, e.g. `project://nova/api-standards`) alongside a search Tool - and a contract format for projects to declare which knowledge domains they publish and depend on.
 
 ## Composition
 
-How can tool invocations be reliably chained across multiple MCP servers while maintaining consistent error management? Unlike REST, which benefits from idempotency and standardized status codes, current agent frameworks rely on ad hoc approaches—implementing skill chains and phase commands uniquely per system without general standards.
+How can tool invocations be reliably chained across multiple MCP servers while maintaining consistent error management? Unlike REST, which benefits from idempotency and standardized status codes, current agent frameworks rely on ad hoc approaches-implementing skill chains and phase commands uniquely per system without general standards.
+
+Lightspeed's dual RAG modes (inline context injection + tool-based `file_search`) and LLM-based tool filtering across MCP servers show composition within a single session, but not across independent servers.
 
 ## Versioning
 
@@ -103,6 +119,11 @@ How is schema evolution managed for tools so as to avoid breaking existing agent
 
 How does a tool server specify its required permissions? While REST uses the concept of OAuth scopes for this purpose, current agent server implementations may seed permissions but typically do not provide ways for servers to self-declare their capabilities or scope requirements directly.
 
+Lightspeed has the richest auth model observed: per-server auth patterns (file, kubernetes, client-per-request via `MCP-HEADERS`, OAuth, gateway-injected headers), graceful skip on missing auth - but this is server-side enforcement, not self-declaration of required scopes.
+
 ## Contracts
 
 How can a project explicitly declare its dependencies on specific MCP capabilities? REST employs OpenAPI specifications to articulate such requirements. In contrast, agent ecosystems today might only validate the presence of required servers, stopping short of checking their exposed capabilities or API contracts.
+
+Lightspeed publishes its own OpenAPI spec (`docs/openapi.json`) and exposes `/v1/providers`, `/v1/tools`, `/v1/mcp-servers` for runtime introspection - the closest to capability advertisement, but consumed by its own agents, not declared as a project dependency contract.
+

@@ -17,5 +17,8 @@ dependencies = [
 [project.scripts]
 rag-mcp-server = "rag_mcp:main"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rag_mcp"]

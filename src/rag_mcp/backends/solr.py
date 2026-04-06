@@ -86,6 +86,9 @@ class SolrBackend:
                 "description": "Red Hat documentation, solutions, articles, CVEs, and errata via Solr/OKP",
                 "doc_count": -1,
                 "last_updated": "live",
+                "access": "credentialed",
+                "freshness": "live",
+                "coverage": ["documentation", "solutions", "articles", "cves", "errata"],
             }
         ]
 

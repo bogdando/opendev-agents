@@ -18,7 +18,9 @@ async def search(
     """Search a knowledge base for relevant documentation.
 
     Returns formatted markdown with source attribution that can be
-    injected directly into the conversation context.
+    injected directly into the conversation context.  When no results
+    are found, returns recovery hints with suggested broader terms
+    and alternative stores.
 
     Args:
         query: Natural language search query.
@@ -28,19 +30,54 @@ async def search(
     """
     app = get_app_context(ctx)
 
+    stores = await app.backend.list_stores()
+    if not stores:
+        return "No knowledge stores available."
+
     if not vector_store_id:
-        stores = await app.backend.list_stores()
-        if not stores:
-            return "No knowledge stores available."
         vector_store_id = stores[0]["id"]
 
     results = await app.backend.search(query, vector_store_id, top_k)
-    return format_results(results, app.config.max_response_chars)
+
+    if results:
+        return format_results(results, app.config.max_response_chars)
+
+    return _build_recovery_hints(query, vector_store_id, stores)
+
+
+def _build_recovery_hints(
+    query: str, searched_store: str, all_stores: list[dict]
+) -> str:
+    """Build a recovery-hint response when search returns no results."""
+    keywords = query.split()
+    lines = [
+        f'No results found for "{query}" in store "{searched_store}".',
+        "",
+        "**Suggestions**:",
+    ]
+
+    if len(keywords) > 1:
+        broader = ", ".join(f'"{kw}"' for kw in keywords)
+        lines.append(f"- Try broader terms: {broader}")
+
+    other_stores = [s for s in all_stores if s["id"] != searched_store]
+    for s in other_stores:
+        lines.append(f"- Try a different store: \"{s['id']}\" — {s['description']}")
+
+    store_ids = [s["id"] for s in all_stores]
+    lines.append(f"- Available stores: {', '.join(store_ids)}")
+
+    return "\n".join(lines)
 
 
 @mcp.resource("knowledge://stores")
 async def list_knowledge_stores(ctx: Context) -> str:
-    """List all available knowledge stores and their metadata."""
+    """List all available knowledge stores (compact catalog).
+
+    Level 1 of progressive discovery: returns store IDs, names,
+    access level, and freshness so the agent can decide which
+    store to inspect or search.
+    """
     app = get_app_context(ctx)
     stores = await app.backend.list_stores()
 
@@ -51,8 +88,9 @@ async def list_knowledge_stores(ctx: Context) -> str:
     for s in stores:
         lines.append(f"## {s['name']}")
         lines.append(f"- **Store ID**: `{s['id']}`")
+        lines.append(f"- **Access**: {s.get('access', 'unknown')}")
+        lines.append(f"- **Freshness**: {s.get('freshness', s.get('last_updated', 'unknown'))}")
         lines.append(f"- **Documents**: {s['doc_count']}")
-        lines.append(f"- **Last updated**: {s['last_updated']}")
         lines.append(f"- {s['description']}")
         lines.append("")
     return "\n".join(lines)
@@ -60,17 +98,27 @@ async def list_knowledge_stores(ctx: Context) -> str:
 
 @mcp.resource("knowledge://{store_id}")
 async def get_knowledge_store(store_id: str, ctx: Context) -> str:
-    """Get metadata for a specific knowledge store."""
+    """Get full metadata for a specific knowledge store.
+
+    Level 2 of progressive discovery: returns domain coverage,
+    corpus freshness, access level, and document count so the
+    agent can decide whether this store is relevant for the task.
+    """
     app = get_app_context(ctx)
     store = await app.backend.get_store(store_id)
 
     if store is None:
         return f"Knowledge store '{store_id}' not found."
 
+    coverage = store.get("coverage", [])
+    coverage_str = ", ".join(coverage) if coverage else "not specified"
+
     return (
         f"# {store['name']}\n\n"
         f"- **Store ID**: `{store['id']}`\n"
+        f"- **Access**: {store.get('access', 'unknown')}\n"
+        f"- **Freshness**: {store.get('freshness', store.get('last_updated', 'unknown'))}\n"
         f"- **Documents**: {store['doc_count']}\n"
-        f"- **Last updated**: {store['last_updated']}\n"
+        f"- **Coverage**: {coverage_str}\n"
         f"- {store['description']}\n"
     )

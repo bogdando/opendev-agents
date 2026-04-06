@@ -35,15 +35,22 @@ class MockBackend:
         for d in self._store_dirs():
             md_files = list(d.glob("*.md"))
             mtime = max((f.stat().st_mtime for f in md_files), default=0.0)
+            freshness = (
+                datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                if mtime
+                else "unknown"
+            )
+            coverage = sorted(f.stem.replace("-", " ") for f in md_files)
             stores.append(
                 {
                     "id": d.name,
                     "name": d.name.replace("-", " ").title(),
                     "description": f"Local markdown knowledge store ({len(md_files)} files)",
                     "doc_count": len(md_files),
-                    "last_updated": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
-                    if mtime
-                    else "unknown",
+                    "last_updated": freshness,
+                    "access": "public",
+                    "freshness": freshness,
+                    "coverage": coverage,
                 }
             )
         return stores

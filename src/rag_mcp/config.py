@@ -22,6 +22,7 @@ class ServerConfig(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
-    backend: Literal["mock"] = "mock"
+    backend: Literal["mock", "solr"] = "mock"
     knowledge_dir: str = "./knowledge"
+    solr_url: str = "http://localhost:8983"
     max_response_chars: int = Field(default=30000, ge=1)

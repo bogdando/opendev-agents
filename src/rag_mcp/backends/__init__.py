@@ -27,4 +27,9 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
 
         return MockBackend(config.knowledge_dir)
 
+    if config.backend == "solr":
+        from rag_mcp.backends.solr import SolrBackend
+
+        return SolrBackend(config.solr_url, config.max_response_chars)
+
     raise ValueError(f"Unknown backend: {config.backend!r}")

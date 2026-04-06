@@ -127,11 +127,22 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAG_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
-| `RAG_MCP_BACKEND` | `mock` | Backend type (`mock` for now) |
-| `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories |
+| `RAG_MCP_BACKEND` | `mock` | Backend type: `mock` or `solr` |
+| `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
+| `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
 
-The mock backend scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` — each
+**Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` — each
 subdirectory name becomes a `vector_store_id`. Add `.md` files to populate stores.
+
+**Solr backend** connects to a Solr/OKP instance at `RAG_MCP_SOLR_URL` and
+queries the `portal` core using okp-mcp's Solr client and formatting modules
+(imported as a library dependency — no code replication). Requires a running
+Solr instance with the OKP schema. Returns formatted markdown with
+highlights, annotations, and source URLs:
+
+```bash
+RAG_MCP_BACKEND=solr RAG_MCP_SOLR_URL=http://solr.example.com:8983 rag-mcp-server
+```

@@ -20,10 +20,18 @@ automated validation (does the referenced store exist? is the corpus current?),
 capability negotiation, and fully autonomous agentic SDLC workflows.
 
 **Implementation**: `src/rag_mcp/` — a FastMCP 3.x server with a pluggable
-backend interface. The initial `MockBackend` does keyword search over local
-markdown files in `knowledge/`. Advisory rules `rag-openstack.mdc` and
-`rag-project.mdc` point agents at the `rag-knowledge` MCP server configured
-in `.cursor/mcp.json`. See [README.md](../README.md) for setup.
+backend interface (`BackendProtocol`). Two backends:
+
+- `MockBackend` — keyword search over local markdown files in `knowledge/`.
+- `SolrBackend` — wraps [okp-mcp](https://github.com/rhel-lightspeed/okp-mcp)'s
+  Solr client (`_solr_query`, `_clean_query`) and result formatting
+  (`_format_result`) as a library dependency, querying the OKP `portal` core.
+  No code replication — okp-mcp submodules are imported directly, bypassing its
+  `__init__.py` to avoid triggering MCP tool registration.
+
+Advisory rules `rag-openstack.mdc` and `rag-project.mdc` point agents at the
+`rag-knowledge` MCP server configured in `.cursor/mcp.json`.
+See [README.md](../README.md) for setup.
 
 ## Motivation
 
@@ -281,13 +289,240 @@ support structured return for multi-store composition:
 
 ### Resource: `knowledge://{store_id}`
 
-List and inspect available knowledge domains.
+List and inspect available knowledge domains. Follows the progressive
+disclosure pattern from [oopsyz/mcp](https://github.com/oopsyz/mcp)'s
+CLI-style API spec: compact catalog first, detailed help on demand.
 
-`list_resources` returns all available vector stores - lets agents discover
-what knowledge exists before deciding whether to search.
+**Level 1 — catalog**: `list_resources` returns all available vector
+stores with compact summaries — lets agents discover what knowledge
+exists before deciding whether to search:
 
-`read_resource("knowledge://{store_id}")` returns store metadata: name,
-description, document count, last updated.
+```json
+[
+  {"uri": "knowledge://openstack-docs", "name": "OpenStack Docs", "description": "Community docs, API refs, deployment guides"},
+  {"uri": "knowledge://openstack-code", "name": "OpenStack Code", "description": "Architecture decisions, commit patterns, specs"},
+  {"uri": "knowledge://okp", "name": "OKP Knowledge Base", "description": "Red Hat docs, solutions, articles, CVEs, errata"}
+]
+```
+
+**Level 2 — store detail**: `read_resource("knowledge://{store_id}")`
+returns full store metadata — domain coverage, corpus freshness, access
+level — so the agent can decide whether to query this store for a given
+task:
+
+```json
+{
+  "id": "openstack-docs",
+  "name": "OpenStack Community Docs",
+  "description": "Upstream community documentation, API references, deployment guides",
+  "doc_count": 1247,
+  "last_updated": "2026-03-20",
+  "access": "public",
+  "domains": ["networking", "compute", "storage", "identity", "deployment"]
+}
+```
+
+**Level 3 — search**: the agent calls the `search` tool (see above)
+with the chosen `vector_store_id`.
+
+### Recovery hints
+
+When a search returns no results, the response includes machine-readable
+guidance (inspired by oopsyz/mcp's `next_actions` error pattern) to help
+the agent recover:
+
+```
+No results found for "cyborg accelerator API" in store "openstack-docs".
+
+**Suggestions**:
+- Try broader terms: "accelerator", "cyborg driver"
+- Try a different store: "openstack-code" covers architecture decisions and specs
+- Available stores: openstack-docs, openstack-code, okp
+```
+
+This is advisory prose for now (the agent reads it as natural language).
+Future structured mode could return machine-readable `next_actions`:
+
+```json
+{
+  "status": "empty",
+  "suggestions": [
+    {"action": "retry", "query": "accelerator cyborg driver"},
+    {"action": "search", "store_id": "openstack-code", "reason": "covers architecture and specs"}
+  ],
+  "available_stores": ["openstack-docs", "openstack-code", "okp"]
+}
+```
+
+### Store annotations
+
+Store metadata includes self-describing annotations (adapted from
+oopsyz/mcp's `risk` metadata pattern) so agents can reason about
+fitness before querying:
+
+| Field | Type | Description |
+|---|---|---|
+| `access` | `public` / `credentialed` | Whether the store requires auth |
+| `freshness` | `live` / ISO date | Last corpus update or `live` for real-time backends |
+| `coverage` | list of strings | Knowledge domains covered |
+| `doc_count` | integer or `-1` | Number of indexed documents (`-1` = unknown/live) |
+
+## Agent interaction examples
+
+The following `curl` examples show how an agent (or human) interacts with
+the RAG MCP server over SSE/HTTP transport. The progressive disclosure
+flow mirrors the discover → inspect → invoke pattern from
+[oopsyz/mcp](https://github.com/oopsyz/mcp)'s CLI-style API spec.
+
+### 1. Discover available knowledge stores
+
+```bash
+# List all knowledge stores (MCP list_resources)
+curl -s http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"resources/list"}' | jq .
+```
+
+Response (compact catalog — names and summaries only):
+
+```json
+{
+  "result": {
+    "resources": [
+      {
+        "uri": "knowledge://openstack-docs",
+        "name": "OpenStack Docs",
+        "description": "Community docs, API refs, deployment guides"
+      },
+      {
+        "uri": "knowledge://openstack-code",
+        "name": "OpenStack Code",
+        "description": "Architecture decisions, commit patterns, specs"
+      }
+    ]
+  }
+}
+```
+
+### 2. Inspect a specific store
+
+```bash
+# Get store metadata (MCP read_resource)
+curl -s http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc":"2.0","id":2,
+    "method":"resources/read",
+    "params":{"uri":"knowledge://openstack-docs"}
+  }' | jq .
+```
+
+Response (full detail — domain coverage, freshness, access level):
+
+```json
+{
+  "result": {
+    "contents": [{
+      "uri": "knowledge://openstack-docs",
+      "text": "{\"id\":\"openstack-docs\",\"name\":\"OpenStack Community Docs\",\"description\":\"Upstream community documentation\",\"doc_count\":1247,\"last_updated\":\"2026-03-20\",\"access\":\"public\",\"domains\":[\"networking\",\"compute\",\"storage\"]}"
+    }]
+  }
+}
+```
+
+### 3. Search a knowledge store
+
+```bash
+# Search for relevant content (MCP tools/call)
+curl -s http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc":"2.0","id":3,
+    "method":"tools/call",
+    "params":{
+      "name":"search",
+      "arguments":{
+        "query":"L3 agent floating IP",
+        "vector_store_id":"openstack-docs",
+        "top_k":3
+      }
+    }
+  }' | jq -r '.result.content[0].text'
+```
+
+Response (formatted markdown injected into agent context):
+
+```markdown
+## L3 Agent Architecture
+
+The L3 agent manages router namespaces and floating IPs. Each router
+gets its own network namespace (`qrouter-<uuid>`) with internal and
+external interfaces...
+
+**Source**: docs/networking/l3-agent.md
+
+---
+
+## Floating IP Implementation
+
+Floating IPs are implemented as 1:1 NAT rules in the router namespace.
+The L3 agent adds iptables DNAT/SNAT rules when a floating IP is
+associated...
+
+**Source**: docs/networking/floating-ips.md
+```
+
+### 4. Search with empty results (recovery hints)
+
+```bash
+curl -s http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc":"2.0","id":4,
+    "method":"tools/call",
+    "params":{
+      "name":"search",
+      "arguments":{
+        "query":"cyborg accelerator FPGA driver",
+        "vector_store_id":"openstack-docs"
+      }
+    }
+  }' | jq -r '.result.content[0].text'
+```
+
+Response (recovery guidance for the agent):
+
+```markdown
+No results found for "cyborg accelerator FPGA driver" in store "openstack-docs".
+
+**Suggestions**:
+- Try broader terms: "accelerator", "cyborg"
+- Try a different store: "openstack-code" covers architecture decisions and specs
+- Available stores: openstack-docs, openstack-code
+```
+
+### 5. stdio transport (Cursor / Claude Code)
+
+For stdio-based MCP clients, the same JSON-RPC messages are exchanged
+over stdin/stdout. The `.cursor/mcp.json` or `.claude/settings.json`
+config handles transport:
+
+```json
+{
+  "mcpServers": {
+    "rag-knowledge": {
+      "command": "rag-mcp-server",
+      "env": {
+        "RAG_MCP_BACKEND": "mock",
+        "RAG_MCP_KNOWLEDGE_DIR": "./knowledge"
+      }
+    }
+  }
+}
+```
+
+The agent then uses the same tool/resource calls internally — the
+progressive discovery flow is identical regardless of transport.
 
 ## Backend options
 
@@ -408,3 +643,4 @@ DB credentials.
 - [MCP Specification](https://modelcontextprotocol.io/specification) - Model Context Protocol: Tools (actions) and Resources (read-only data by URI)
 - [AAP Harness ARC](https://github.com/ansible-automation-platform/harness) - Agent Runtime Configuration: hierarchical config merge, mandatory MCP servers, guardrails, skills with dependencies
 - [opendev-agents](https://github.com/bogdando/opendev-agents) - glob-based `.mdc` rules, empty-glob advisory MCP references, upstream/downstream separation model
+- [oopsyz/mcp](https://github.com/oopsyz/mcp) - CLI-style HTTP API spec for progressive agent discovery: compact catalog → per-command help → invoke, with recovery hints (`next_actions`), risk metadata, and a federation extension for cross-service namespace-based routing

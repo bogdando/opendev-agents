@@ -111,6 +111,11 @@ How does an agent determine which MCP servers are available and what services th
 
 In our prose-rule model, advisory `.mdc` rules with empty globs serve as manual discovery pointers - `rag-nova.mdc` tells the agent "Nova knowledge is available via the RAG MCP server." This works but is static, not self-describing: the agent cannot introspect what stores exist or what knowledge domains they cover without the rule file being present.
 
+Prior art:
+* [oopsyz/mcp](https://github.com/oopsyz/mcp): a [CLI-style HTTP API specification](https://github.com/oopsyz/mcp/blob/main/docs/SPEC.md) for progressive disclosure of agent-facing services. Instead of dumping all tool schemas via MCP `tools/list`, exposes a compact catalog at `GET /cli` (names, kinds, summaries), per-command help with full argument schemas and examples on demand (`POST /cli {"command":"help","args":{"command":"..."}}`), and uniform invocation via the same endpoint. Error responses include machine-readable `next_actions` (recovery hints) — the closest thing to HATEOAS links observed in agent tooling. A [federation extension](https://github.com/oopsyz/mcp/blob/main/docs/SPEC_FEDERATION_EXTENSION.md) addresses cross-service discovery via namespace-based routing (`/cli/tmf620/catalogmgt`, `/cli/tmf622/productorder`), hybrid structural+semantic discovery, and namespace-scoped authorization. Command help includes `risk` metadata (`read|write|destructive|simulate`, `reversible`, `idempotent`, `confirmation_required`) — self-describing capability annotations.
+
+  The pattern is directly applicable to knowledge store discovery: a RAG MCP server can offer a compact store catalog upfront, per-store help with domain coverage and corpus metadata on demand, and recovery hints when searches return empty. See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md) for how we adopt this.
+
 ## Composition
 
 How can tool invocations be reliably chained across multiple MCP servers while maintaining consistent error management? Unlike REST, which benefits from idempotency and standardized status codes, current agent frameworks rely on ad hoc approaches-implementing skill chains and phase commands uniquely per system without general standards.

@@ -46,9 +46,53 @@ async def search(
     results = await app.backend.search(query, vector_store_id, top_k)
 
     if results:
-        return format_results(results, app.config.max_response_chars)
+        formatted = format_results(
+            results, app.config.max_response_chars
+        )
+        unmatched = _find_unmatched_terms(query, results)
+        if unmatched:
+            terms = ", ".join(f'"{t}"' for t in unmatched)
+            formatted += (
+                "\n\n---\n\n"
+                "**Note**: No documents in store "
+                f'"{vector_store_id}" mention {terms}.'
+                " Results above matched only the"
+                " other query terms."
+            )
+        return formatted
 
     return _build_recovery_hints(query, vector_store_id, stores)
+
+
+# Short words unlikely to be meaningful query terms.
+_STOP_WORDS = frozenset({
+    "a", "an", "the", "in", "on", "at", "to", "of",
+    "is", "it", "do", "or", "by", "as", "if", "be",
+    "so", "no", "up", "my", "we", "he",
+    "how", "who", "what", "when", "where", "why",
+    "and", "but", "for", "not", "are", "was", "has",
+    "can", "did", "its", "our", "had", "may", "all",
+})
+
+
+def _find_unmatched_terms(
+    query: str, results: list[dict]
+) -> list[str]:
+    """Return query terms absent from every result text.
+
+    Filters out common stop words so the hint only flags
+    topical terms that genuinely have no coverage.
+    """
+    terms = [
+        t for t in query.lower().split()
+        if t not in _STOP_WORDS and len(t) > 2
+    ]
+    if len(terms) <= 1:
+        return []
+    combined = " ".join(
+        r.get("text", "").lower() for r in results
+    )
+    return [t for t in terms if t not in combined]
 
 
 def _build_recovery_hints(

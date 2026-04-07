@@ -40,31 +40,27 @@ or out-of-workspace** prose and procedures.
 
 ## Progressive discovery (mandatory)
 
-`vector_store_id` is a **required** parameter - the server rejects
-calls without it. Follow this three-level sequence:
+`vector_store_id` is a **required** parameter — the server rejects
+calls without it. You MUST pick **one** store before searching.
 
-1. **Discover** - if you do NOT already know the store ID from a
-   loaded advisory rule (e.g. `rag-nova-dev.mdc`), read the MCP
-   resource `knowledge://stores` first to list available stores.
-2. **Inspect** - read `knowledge://<store_id>` for
-   coverage and freshness before searching.
-3. **Search** - call with template:
+**Do NOT guess store IDs. Do NOT search multiple stores in
+parallel.** Follow this sequence strictly:
+
+1. **Check advisory rules first** — if a store-specific rule is
+   already loaded (e.g. `rag-nova-dev.mdc`), use the store ID it
+   provides and skip to step 4.
+2. **Discover** — read the MCP resource `knowledge://stores`.
+   This returns every available store with its ID, description,
+   and coverage. Wait for the result before proceeding.
+3. **Pick one store** — choose the single best-matching store
+   based on the user's question and the store descriptions.
+   If unsure, read `knowledge://<store_id>` for more detail.
+4. **Search** — call exactly once:
 
        search(query="...", vector_store_id="<id>", top_k=5)
 
-If a store-specific advisory rule is loaded (e.g.
-`rag-nova-dev.mdc` hardcodes `vector_store_id="nova-dev"`),
-skip steps 1-2 and use the store ID from the rule directly.
-
-## Known stores
-
-| Store ID | Content |
-|----------|---------|
-| `nova-dev` | Agent personas, workflow skills, Nova maintainer / reviewer knowledge (symlinks under `knowledge/nova-dev/`). |
-| `openstack-code` | Project / architecture snippets (local markdown). |
-| `openstack-docs` | Community doc-oriented snippets (local markdown). |
-
-These may change - when in doubt, run discovery (step 1).
+   Only after reviewing results, consider a follow-up search in
+   a different store if recovery hints suggest it.
 
 ## Recovery
 

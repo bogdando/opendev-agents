@@ -57,53 +57,56 @@ queries the `portal` core using okp-mcp's Solr client and formatting modules
 Solr instance with the OKP schema. Returns formatted markdown with
 highlights, annotations, and source URLs
 
-## Common headers
+## Shell helper
 
-Every request needs these headers:
+Define a function so headers, URL, and output handling are in one
+place. All subsequent commands use `mcp <json-rpc-body>`.
 
 ```bash
-HEADERS='-H "Content-Type: application/json" -H "Accept: application/json, text/event-stream"'
+MCP_URL="http://localhost:8321/mcp"
+MCP_OUT="/tmp/mcp-response.txt"
+
+mcp() {
+  local -a sh=()
+  [ -n "$SESSION" ] && sh=(-H "Mcp-Session-Id: $SESSION")
+  curl -s -o "$MCP_OUT" \
+    -D /dev/stderr \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    "${sh[@]}" \
+    -d "$1" \
+    "$MCP_URL" 2>/tmp/mcp-headers.txt
+  cat "$MCP_OUT"
+}
 ```
+
+Piping `mcp ... | head -c` is safe - it only truncates the `cat`
+output, not curl's connection (`-o` writes the full SSE body to
+`$MCP_OUT` regardless). Use `curl --no-buffer` instead if you need
+to stream the response incrementally.
 
 ## Initialize a session
 
 ```bash
-SESSION=$(curl -sv http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc":"2.0","id":1,
-    "method":"initialize",
-    "params":{
-      "protocolVersion":"2025-03-26",
-      "capabilities":{},
-      "clientInfo":{"name":"curl","version":"1.0"}
-    }
-  }' 2>&1 | grep -i 'mcp-session-id' | awk '{print $NF}' | tr -d '\r')
+mcp '{
+  "jsonrpc":"2.0","id":1,
+  "method":"initialize",
+  "params":{
+    "protocolVersion":"2025-03-26",
+    "capabilities":{},
+    "clientInfo":{"name":"curl","version":"1.0"}
+  }
+}'
 
+SESSION=$(grep -i 'mcp-session-id' /tmp/mcp-headers.txt \
+  | awk '{print $NF}' | tr -d '\r')
 echo "Session: $SESSION"
 ```
 
-The server returns capabilities and instructions via SSE:
-
-```
-event: message
-data: {"jsonrpc":"2.0","id":1,"result":{
-  "protocolVersion":"2025-03-26",
-  "capabilities":{"tools":{"listChanged":true},"resources":{"listChanged":true},...},
-  "serverInfo":{"name":"rag-knowledge","version":"3.2.0"},
-  "instructions":"Search external knowledge bases ..."
-}}
-```
-
-Send the `initialized` notification to complete the handshake:
+Complete the handshake:
 
 ```bash
-curl -s http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+mcp '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 ```
 
 ## Level 1 - Discover available stores
@@ -112,15 +115,11 @@ Read the `knowledge://stores` resource to see what knowledge is
 available:
 
 ```bash
-curl -s http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{
-    "jsonrpc":"2.0","id":2,
-    "method":"resources/read",
-    "params":{"uri":"knowledge://stores"}
-  }'
+mcp '{
+  "jsonrpc":"2.0","id":2,
+  "method":"resources/read",
+  "params":{"uri":"knowledge://stores"}
+}'
 ```
 
 Response (formatted):
@@ -128,26 +127,12 @@ Response (formatted):
 ```markdown
 # Available Knowledge Stores
 
-## Nova Dev
-- **Store ID**: `nova-dev`
+## Foo Dev
+- **Store ID**: `<project-dev>`
 - **Access**: public
 - **Freshness**: <timestamp>
-- **Documents**: 38
-- Local markdown knowledge store (38 files)
-
-## Openstack Code
-- **Store ID**: `openstack-code`
-- **Access**: public
-- **Freshness**: 2026-04-06T10:53:52.127487+00:00
-- **Documents**: 1
-- Local markdown knowledge store (1 files)
-
-## Openstack Docs
-- **Store ID**: `openstack-docs`
-- **Access**: public
-- **Freshness**: 2026-04-06T10:53:52.127487+00:00
-- **Documents**: 2
-- Local markdown knowledge store (2 files)
+- **Documents**: 42
+- Local markdown knowledge store (42 files)
 ```
 
 ## Level 2 - Inspect a specific store
@@ -155,41 +140,30 @@ Response (formatted):
 Read `knowledge://{store_id}` to see domain coverage and metadata:
 
 ```bash
-curl -s http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{
-    "jsonrpc":"2.0","id":3,
-    "method":"resources/read",
-    "params":{"uri":"knowledge://nova-dev"}
-  }'
+mcp '{
+  "jsonrpc":"2.0","id":3,
+  "method":"resources/read",
+  "params":{"uri":"knowledge://{store_id}"}
+}'
 ```
 
 Response:
 
 ```markdown
-# Nova Dev
+# Foo Dev
 
-- **Store ID**: `nova-dev`
+- **Store ID**: `{store_id}`
 - **Access**: public
 - **Freshness**: <timestamp>
-- **Documents**: 38
-- **Coverage**: agents, bug triager, gerrit-to-gitlab-agents, ...,
-  nova, nova core, nova coresec, nova-review-rules, ...,
-  nova-review-skill-code-review, nova-review-skill-spec-review, ...,
-  nova-spec-workflow-skill-create-spec, rules
-- Local markdown knowledge store (38 files)
+- **Documents**: 42
+- **Coverage**: agents, bugs, ...,
+- Local markdown knowledge store (42 files)
 ```
 
 ## Discover available tools
 
 ```bash
-curl -s http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","id":4,"method":"tools/list"}'
+mcp '{"jsonrpc":"2.0","id":4,"method":"tools/list"}'
 ```
 
 Response shows the `search` tool with its input schema:
@@ -213,65 +187,57 @@ Response shows the `search` tool with its input schema:
 
 ## Level 3 - Search a knowledge store
 
-Search for documentation by keyword:
+Use a store ID from the Level 1 discovery results:
 
 ```bash
-curl -s http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{
-    "jsonrpc":"2.0","id":5,
-    "method":"tools/call",
-    "params":{
-      "name":"search",
-      "arguments":{
-        "query":"conductor versioned objects RPC",
-        "vector_store_id":"nova-dev",
-        "top_k":3
-      }
+mcp '{
+  "jsonrpc":"2.0","id":5,
+  "method":"tools/call",
+  "params":{
+    "name":"search",
+    "arguments":{
+      "query":"conductor versioned objects RPC",
+      "vector_store_id":"{store_id}",
+      "top_k":3
     }
-  }'
+  }
+}'
 ```
 
 The response contains formatted markdown with source attribution.
 Results are ranked by keyword relevance - the mock backend returns
-full document text with `**Source**: nova-dev/nova-core.md` attribution
+full document text with `**Source**: foo-dev/foo.md` attribution
 at the end of each result.
 
 ## Recovery hints on empty results
 
-When a query matches nothing, the server returns actionable suggestions:
+When a query matches nothing, the server returns actionable
+suggestions:
 
 ```bash
-curl -s http://localhost:8321/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Mcp-Session-Id: $SESSION" \
-  -d '{
-    "jsonrpc":"2.0","id":6,
-    "method":"tools/call",
-    "params":{
-      "name":"search",
-      "arguments":{
-        "query":"xyzzy frobnicator",
-        "vector_store_id":"nova-dev",
-        "top_k":3
-      }
+mcp '{
+  "jsonrpc":"2.0","id":6,
+  "method":"tools/call",
+  "params":{
+    "name":"search",
+    "arguments":{
+      "query":"xyzzy frobnicator",
+      "vector_store_id":"{store_id}",
+      "top_k":3
     }
-  }'
+  }
+}'
 ```
 
 Response:
 
 ```markdown
-No results found for "xyzzy frobnicator" in store "nova-dev".
+No results found for "xyzzy frobnicator" in store "foo-dev".
 
 **Suggestions**:
 - Try broader terms: "xyzzy", "frobnicator"
-- Try a different store: "openstack-code" - Local markdown knowledge store (1 files)
-- Try a different store: "openstack-docs" - Local markdown knowledge store (2 files)
-- Available stores: nova-dev, openstack-code, openstack-docs
+- Try a different store: "xxx"
+- Available stores: foo-dev, xxx
 ```
 
 ## Stop the server
@@ -279,11 +245,13 @@ No results found for "xyzzy frobnicator" in store "nova-dev".
 When done, terminate the background server:
 
 ```bash
-kill $RAG_MCP_PID 2>/dev/null && echo "Server stopped" || echo "Server not running"
+kill $RAG_MCP_PID 2>/dev/null && echo "Server stopped" \
+  || echo "Server not running"
 ```
 
 Or find and kill by port if the PID variable is lost:
 
 ```bash
-kill $(lsof -ti :8321) 2>/dev/null && echo "Server stopped" || echo "Server not running"
+kill $(lsof -ti :8321) 2>/dev/null && echo "Server stopped" \
+  || echo "Server not running"
 ```

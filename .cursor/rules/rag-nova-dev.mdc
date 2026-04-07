@@ -1,0 +1,20 @@
+---
+description: Nova development knowledge (personas - architect, maintainer, reviewer, coder)
+globs: []
+---
+
+For Nova development questions, call rag-knowledge MCP exactly like this
+template -
+
+    search(query="<your query here>", vector_store_id="nova-dev", top_k=5)
+
+The vector_store_id="nova-dev" parameter is REQUIRED.
+
+Wrong - search(query="conductor boundary", top_k=8)
+Right - search(query="conductor boundary", vector_store_id="nova-dev", top_k=5)
+
+NEVER use this for Nova usage/configuration questions (cloud user or
+cloud admin persona).
+
+For CLI exploration without IDE MCP access, use skil /mcp-rag
+for curl-based session init, store discovery, and search invocation.

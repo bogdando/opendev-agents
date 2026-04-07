@@ -1,0 +1,94 @@
+---
+description: External knowledge for agents via RAG MCP (local markdown or OKP/Solr)
+alwaysApply: true
+---
+
+# RAG knowledge MCP - agent rules
+
+Agents in this workspace must treat **retrieval from external knowledge
+stores** as a first-class step whenever an answer depends on specific
+workflows of teams, OpenStack projects conventions, docs, or curated
+markdown that is **not** in the current repo file you already opened.
+
+## Server and backends
+
+The **rag-knowledge** MCP server (`search` tool) is configured in
+`.cursor/mcp.json`. Two backends:
+
+| Backend | Env | Use case |
+|---------|-----|----------|
+| **mock** | `RAG_MCP_BACKEND=mock`, `RAG_MCP_KNOWLEDGE_DIR=<abs path>` | Local `.md` trees; each **subdirectory** of `knowledge/` is one `vector_store_id`; mock scans and refreshes on change. |
+| **solr / OKP** | `RAG_MCP_BACKEND=solr`, `RAG_MCP_SOLR_URL=...` | Red Hat OKP / Solr **`portal`** core; formatted snippets with source URLs. |
+
+Default in this repo: **mock** with
+`RAG_MCP_KNOWLEDGE_DIR` pointing at `knowledge/` under the workspace.
+Switch to **solr** only when an operator-run OKP instance is available;
+document the URL in the environment or MCP config, not in prompts.
+
+## When to call `search`
+
+Call **`search`** before answering when the user asks about:
+
+- An OpenStack upstream projects development, or processes (bug triage, backporting).
+- Downstream processes and workflows.
+- Developers facing and users/operators facing documentation,
+  opinionated installers and configuration guides, or internal OKP (Offline Knowledge Portal) corpora - when solr backend is on.
+
+Do **not** rely on `search` for pure code navigation in a checked-out
+tree - use **Read**, **Grep**, **Glob** first; use RAG for **curated
+or out-of-workspace** prose and procedures.
+
+## Progressive discovery (mandatory)
+
+`vector_store_id` is a **required** parameter - the server rejects
+calls without it. Follow this three-level sequence:
+
+1. **Discover** - if you do NOT already know the store ID from a
+   loaded advisory rule (e.g. `rag-nova-dev.mdc`), read the MCP
+   resource `knowledge://stores` first to list available stores.
+2. **Inspect** - read `knowledge://<store_id>` for
+   coverage and freshness before searching.
+3. **Search** - call with template:
+
+       search(query="...", vector_store_id="<id>", top_k=5)
+
+If a store-specific advisory rule is loaded (e.g.
+`rag-nova-dev.mdc` hardcodes `vector_store_id="nova-dev"`),
+skip steps 1-2 and use the store ID from the rule directly.
+
+## Known stores
+
+| Store ID | Content |
+|----------|---------|
+| `nova-dev` | Agent personas, workflow skills, Nova maintainer / reviewer knowledge (symlinks under `knowledge/nova-dev/`). |
+| `openstack-code` | Project / architecture snippets (local markdown). |
+| `openstack-docs` | Community doc-oriented snippets (local markdown). |
+
+These may change - when in doubt, run discovery (step 1).
+
+## Recovery
+
+Use **increasing `top_k`** (e.g. 5 → 8) only if the first pass is
+thin; if results are empty, follow the server's **recovery hints**
+(broader query, different store).
+
+## Response hygiene
+
+After `search`, **summarize** findings in your own words and cite
+the **Source** lines from the result (e.g. `nova-dev/...md`). Do
+not paste entire documents. If the backend was **solr/OKP**,
+preserve **URLs** from the formatted output so humans can verify.
+
+## CLI / automation
+
+When MCP is not wired (e.g. CI or shell-only), follow the
+**mcp-rag** skill: HTTP session to the server, `resources/read`
+for `knowledge://stores`, `tools/call` `search` with the same
+arguments as in the IDE.
+
+## Adding local knowledge
+
+Add or symlink `.md` files under `knowledge/<store-id>/`. Use
+**absolute** `RAG_MCP_KNOWLEDGE_DIR` in server env so paths stay
+valid across cwd changes. Prefer small, focused markdown files
+over huge blobs.

@@ -12,7 +12,7 @@ from rag_mcp.server import get_app_context, mcp
 async def search(
     ctx: Context,
     query: str,
-    vector_store_id: str = "",
+    vector_store_id: str,
     top_k: int = 5,
 ) -> str:
     """Search a knowledge base for relevant documentation.
@@ -24,8 +24,9 @@ async def search(
 
     Args:
         query: Natural language search query.
-        vector_store_id: ID of the knowledge store to search.
-                         Leave empty to search the first available store.
+        vector_store_id: ID of the knowledge store to search
+            (required).  Read the ``knowledge://stores`` resource
+            first to discover available store IDs.
         top_k: Maximum number of results to return.
     """
     app = get_app_context(ctx)
@@ -34,8 +35,13 @@ async def search(
     if not stores:
         return "No knowledge stores available."
 
-    if not vector_store_id:
-        vector_store_id = stores[0]["id"]
+    store_ids = [s["id"] for s in stores]
+    if vector_store_id not in store_ids:
+        return (
+            f"Unknown store \"{vector_store_id}\". "
+            f"Available stores: {', '.join(store_ids)}. "
+            "Read resource knowledge://stores for details."
+        )
 
     results = await app.backend.search(query, vector_store_id, top_k)
 
@@ -62,7 +68,7 @@ def _build_recovery_hints(
 
     other_stores = [s for s in all_stores if s["id"] != searched_store]
     for s in other_stores:
-        lines.append(f"- Try a different store: \"{s['id']}\" — {s['description']}")
+        lines.append(f"- Try a different store: \"{s['id']}\" - {s['description']}")
 
     store_ids = [s["id"] for s in all_stores]
     lines.append(f"- Available stores: {', '.join(store_ids)}")

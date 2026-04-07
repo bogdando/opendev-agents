@@ -108,7 +108,13 @@ use the `search` tool from the `rag-knowledge` MCP server with
 Jira MCP server
 ===============
 
-Requires Node.js runtime.
+Requires `uv` (provides `uvx`). Install via
+[astral.sh](https://docs.astral.sh/uv/getting-started/installation/) or:
+
+```bash
+pip install --user uv
+```
+
 Set required env vars:
 
 ```bash

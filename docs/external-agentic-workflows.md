@@ -213,7 +213,7 @@ curl -s http://localhost:8321/mcp \
 Or with a prose prompt:
 ```
 How do I write a nova-spec from a JIRA RFE?
-``
+```
 
 The agent should call
 `search(query="create spec RFE", vector_store_id="nova-dev")`

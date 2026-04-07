@@ -103,87 +103,171 @@ This creates stores from each subdirectory: `knowledge` (store_id:
 `workflows`). The trade-off is less control over what goes into each
 store.
 
-## Step 4: Create an advisory rule
+## Create an advisory rule
 
 Create `.cursor/rules/rag-nova-dev.mdc` (or add it to your opendev-agents
 rules directory):
 
 ```yaml
 ---
-description: Nova development knowledge (architecture, review rules, coding conventions, personas)
+description: Nova development knowledge (personas - architect, maintainer, reviewer, coder)
 globs: []
 ---
 
-When answering questions about Nova (API, cells, conductor, scheduler, compute
-agent, metadata, novncproxy) project specific development workflows and personas -
-architecture, versioned objects, RPC and Database patterns, virt drivers,
-microversions, review conventions, commit message requirements, bug triage, design
-specs authoring, downstream Gerrit-to-GitLab backporting - use the `search`
-tool from the `rag-knowledge` MCP server to retrieve relevant documentation before
-responding.
+For Nova development questions, call rag-knowledge MCP exactly like this
+template -
 
-Only invoke the search when the question is specifically about Nova
-internals, development workflows, contributor/bug-triager/backporter/spec author
-personas, review conventions - not for general Python nor generic for OpenDev projects
-or OpenStack questions.
+    search(query="<your query here>", vector_store_id="nova-dev", top_k=5)
 
-Pass vector_store_id "nova-dev" to scope the search to the Nova
-development knowledge store.
+The vector_store_id="nova-dev" parameter is REQUIRED.
 
-Mandatory - for the MCP protocol details (session initialization, progressive
-store discovery, search invocation, and recovery hints) always use
-the `/mcp-rag` skill, see @skills/mcp-rag.md.
+Wrong - search(query="conductor boundary", top_k=8)
+Right - search(query="conductor boundary", vector_store_id="nova-dev", top_k=5)
 
-Example usage
-- "How does Nova's conductor boundary work?" → search with
-  query "conductor boundary orchestration" in nova-dev
-- "What are the Nova commit message conventions?" → search with
-  query "commit message conventions" in nova-dev
-- "What should a nova-core reviewer check for versioned objects?" →
-  search with query "versioned objects review checklist" in nova-dev
-- "How do I triage a Nova bug?" → search with
-  query "bug triage launchpad" in nova-dev
-- "How do I write a nova-spec?" → search with
-  query "create spec RFE" in nova-dev
-- "How do I backport a Gerrit change to GitLab?" → search with
-  query "backport gerrit gitlab cherry-pick" in nova-dev
+NEVER use this for Nova usage/configuration questions (cloud user or
+cloud admin persona).
+
+For CLI exploration without IDE MCP access, use skil /mcp-rag
+for curl-based session init, store discovery, and search invocation.
 ```
 
-## Step 3: Navigate the knowledge store
+## CLI exploration (without IDE)
 
-The [RAG MCP skill](../skills/mcp-rag.md) starts the rag mcp server and
-interact with it via `curl` in the progressive discovery flow:
+The [RAG MCP skill](../skills/mcp-rag/SKILL.md) is for manual CLI
+exploration when you don't have IDE MCP access. It starts the server
+with HTTP transport and walks through the `curl`-based flow:
 
-1. **Initialize** a JSON-RPC session and capture the session ID
-2. **Level 1** - read `knowledge://stores` to list available stores
-3. **Level 2** - read `knowledge://nova-dev` to inspect coverage and
-   metadata
-4. **Discover tools** - list the `search` tool and its input schema
-5. **Level 3** - search with `tools/call` using a query and
-   `vector_store_id`
-6. **Recovery hints** - see actionable suggestions when a search
-   returns no results
+1. **Start** the server in the background on port 8321
+2. **Initialize** a JSON-RPC session and capture the session ID
+3. **Level 1** - read `knowledge://stores` to list available stores
+4. **Level 2** - read `knowledge://nova-dev` to inspect coverage
+5. **Discover tools** - list the `search` tool and its input schema
+6. **Level 3** - search with `tools/call` (always with `vector_store_id`)
+7. **Recovery hints** - actionable suggestions on empty results
+8. **Stop** the server when done
 
-To verify the setup works, ask the agent a question that triggers the
-`rag-nova-dev.mdc` advisory rule. For example, type this prompt in
-Cursor or Claude Code:
+In IDE mode (Cursor / Claude Code), the agent calls `search()` natively
+via MCP - the skill is not needed.
 
+To verify the setup works, ask the agent questions that trigger the
+`rag-nova-dev.mdc` advisory rule. Each example below shows the prompt,
+the expected `search` call, and where the answer should come from.
+
+### Conductor boundary and RPC versioning
+
+Invoke the skill and ask:
+
+```
+/mcp-rag search for "conductor boundary versioned objects RPC" in nova-dev
+```
+Or with a prose prompt:
 ```
 How does Nova's conductor boundary work and what versioning rules
 apply to RPC methods?
 ```
 
-The agent should:
-1. Recognize this as a Nova development question (matching the rule)
-2. Call `search(query="conductor versioned objects RPC", vector_store_id="nova-dev")`
-   via the `rag-knowledge` MCP server
-3. Return an answer citing `nova-dev/nova-core.md` and `nova-dev/nova.md`
-   as sources
+The agent should call
+`search(query="conductor boundary versioned objects RPC", vector_store_id="nova-dev")`
+and cite `nova-dev/nova-core.md` and `nova-dev/nova.md`.
 
-If the agent does not invoke the search tool, check that
-`rag-nova-dev.mdc` is loaded (Cursor: visible in Rules settings;
-Claude Code: referenced from `CLAUDE.md`) and that the `rag-knowledge`
-MCP server appears as connected in your IDE.
+Verify via curl (after starting the server and initializing a session
+per the [skill](../skills/mcp-rag/SKILL.md)):
+
+```bash
+curl -s http://localhost:8321/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"search","arguments":{"query":"conductor boundary versioned objects RPC","vector_store_id":"nova-dev","top_k":3}}}'
+```
+
+### Bug triage workflow
+
+```
+/mcp-rag search for "bug triage launchpad" in nova-dev
+```
+Or with a prose prompt:
+```
+How do I triage a Nova bug reported on Launchpad?
+```
+
+The agent should call
+`search(query="bug triage launchpad", vector_store_id="nova-dev")`
+and cite `nova-dev/nova-bug-triage-skill-triage.md` and `nova-dev/bug-triager.md`.
+
+Verify via curl:
+
+```bash
+curl -s http://localhost:8321/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"search","arguments":{"query":"bug triage launchpad","vector_store_id":"nova-dev","top_k":3}}}'
+```
+
+### Spec authoring
+
+```
+/mcp-rag search for "create spec RFE" in nova-dev
+```
+Or with a prose prompt:
+```
+How do I write a nova-spec from a JIRA RFE?
+``
+
+The agent should call
+`search(query="create spec RFE", vector_store_id="nova-dev")`
+and cite `nova-dev/nova-spec-workflow-skill-create-spec.md` and
+`nova-dev/nova-spec-workflow-rules.md`.
+
+Verify via curl:
+
+```bash
+curl -s http://localhost:8321/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"search","arguments":{"query":"create spec RFE","vector_store_id":"nova-dev","top_k":3}}}'
+```
+
+### Gerrit-to-GitLab backport
+
+```
+/mcp-rag search for "backport gerrit gitlab cherry-pick" in nova-dev
+```
+Or with a prose prompt:
+```
+How do I backport a merged Gerrit change to an internal GitLab branch?
+```
+
+The agent should call
+`search(query="backport gerrit gitlab cherry-pick", vector_store_id="nova-dev")`
+and cite `nova-dev/gerrit-to-gitlab-skill-backport.md` and
+`nova-dev/gerrit-to-gitlab-readme.md`.
+
+Verify via curl:
+
+```bash
+curl -s http://localhost:8321/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: $SESSION" \
+  -d '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"search","arguments":{"query":"backport gerrit gitlab cherry-pick","vector_store_id":"nova-dev","top_k":3}}}'
+```
+
+### Troubleshooting
+
+If the agent does not invoke the search tool, check that:
+- `rag-nova-dev.mdc` is loaded (Cursor: Settings > Rules, Skills,
+  Subagents > Rules - the rule should appear in the list;
+  Claude Code: referenced via `@rules.md` from `CLAUDE.md`)
+- The `rag-knowledge` MCP server is connected:
+  - **Cursor**: Settings (Ctrl+Shift+J) > MCP - look for
+    `rag-knowledge` with a green status dot. Click the entry to see
+    startup logs if it shows red.
+  - **Claude Code**: run `/mcp` inside a session to list active
+    servers, or `claude mcp list` from the terminal
+- The `nova-dev` store directory contains symlinks (`ls -la knowledge/nova-dev/`)
 
 ## How it works
 

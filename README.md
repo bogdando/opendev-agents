@@ -182,7 +182,7 @@ The server starts at `http://localhost:8321/mcp`.
 
 | Skill | File | Purpose |
 |-------|------|---------|
-| MCP RAG CLI | `skills/mcp-rag.md` | CLI navigation guide for the RAG MCP server via `curl` - session init, progressive store discovery, search, recovery hints |
+| MCP RAG CLI | `skills/mcp-rag/SKILL.md` | CLI navigation guide for the RAG MCP server via `curl` - session init, progressive store discovery, search, recovery hints |
 | OpenStack Review | `skills/or/SKILL.md` | OpenStack Gerrit code review analysis |
 | Spec-Only Review | `skills/sor/SKILL.md` | OpenStack spec-only review |
 

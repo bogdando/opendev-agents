@@ -131,7 +131,7 @@ For CLI exploration without IDE MCP access, use skil /mcp-rag
 for curl-based session init, store discovery, and search invocation.
 ```
 
-## CLI exploration (without IDE)
+## CLI exploration (without IDE integration)
 
 The [RAG MCP skill](../skills/mcp-rag/SKILL.md) is for manual CLI
 exploration when you don't have IDE MCP access. It starts the server
@@ -149,110 +149,129 @@ with HTTP transport and walks through the `curl`-based flow:
 In IDE mode (Cursor / Claude Code), the agent calls `search()` natively
 via MCP - the skill is not needed.
 
-To verify the setup works, ask the agent questions that trigger the
-`rag-nova-dev.mdc` advisory rule. Each example below shows the prompt,
-the expected `search` call, and where the answer should come from.
+To verify the setup, prompt the agent to 'debug with curl' to follow
+the progressive discovery flow using `curl`.
 
-### Conductor boundary and RPC versioning
+You can follow it manually by starting another server instance in
+another shell and initializing a `SESSION` per the skill description.
 
-Invoke the skill and ask:
-
-```
-/mcp-rag search for "conductor boundary versioned objects RPC" in nova-dev
-```
-Or with a prose prompt:
-```
-How does Nova's conductor boundary work and what versioning rules
-apply to RPC methods?
-```
-
-The agent should call
-`search(query="conductor boundary versioned objects RPC", vector_store_id="nova-dev")`
-and cite `nova-dev/nova-core.md` and `nova-dev/nova.md`.
-
-Verify via curl (after starting the server and initializing a session
-per the [skill](../skills/mcp-rag/SKILL.md)):
+### Step 1 — Discover available stores
 
 ```bash
 curl -s http://localhost:8321/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"search","arguments":{"query":"conductor boundary versioned objects RPC","vector_store_id":"nova-dev","top_k":3}}}'
+  -d '{
+    "jsonrpc":"2.0","id":2,
+    "method":"resources/read",
+    "params":{"uri":"knowledge://stores"}
+  }'
 ```
 
-### Bug triage workflow
+The response lists every store with its ID, document count, and
+description. Pick the store that matches your question — do not
+guess or hardcode a store ID.
 
-```
-/mcp-rag search for "bug triage launchpad" in nova-dev
-```
-Or with a prose prompt:
-```
-How do I triage a Nova bug reported on Launchpad?
-```
+### Step 2 — Inspect the chosen store
 
-The agent should call
-`search(query="bug triage launchpad", vector_store_id="nova-dev")`
-and cite `nova-dev/nova-bug-triage-skill-triage.md` and `nova-dev/bug-triager.md`.
-
-Verify via curl:
+Suppose the catalog returned a store named `nova-dev`. Inspect it:
 
 ```bash
 curl -s http://localhost:8321/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"search","arguments":{"query":"bug triage launchpad","vector_store_id":"nova-dev","top_k":3}}}'
+  -d '{
+    "jsonrpc":"2.0","id":3,
+    "method":"resources/read",
+    "params":{"uri":"knowledge://nova-dev"}
+  }'
 ```
 
-### Spec authoring
+This shows domain coverage, freshness, and document count so you
+can confirm it is the right store before searching.
 
-```
-/mcp-rag search for "create spec RFE" in nova-dev
-```
-Or with a prose prompt:
-```
-How do I write a nova-spec from a JIRA RFE?
-```
+### Step 3 — Search
 
-The agent should call
-`search(query="create spec RFE", vector_store_id="nova-dev")`
-and cite `nova-dev/nova-spec-workflow-skill-create-spec.md` and
-`nova-dev/nova-spec-workflow-rules.md`.
-
-Verify via curl:
+Use the store ID from the discovery results (not a hardcoded guess):
 
 ```bash
 curl -s http://localhost:8321/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"search","arguments":{"query":"create spec RFE","vector_store_id":"nova-dev","top_k":3}}}'
+  -d '{
+    "jsonrpc":"2.0","id":5,
+    "method":"tools/call",
+    "params":{
+      "name":"search",
+      "arguments":{
+        "query":"conductor boundary versioned objects RPC",
+        "vector_store_id":"nova-dev",
+        "top_k":3
+      }
+    }
+  }'
 ```
 
-### Gerrit-to-GitLab backport
+### Step 4 — Follow-up searches
 
-```
-/mcp-rag search for "backport gerrit gitlab cherry-pick" in nova-dev
-```
-Or with a prose prompt:
-```
-How do I backport a merged Gerrit change to an internal GitLab branch?
-```
-
-The agent should call
-`search(query="backport gerrit gitlab cherry-pick", vector_store_id="nova-dev")`
-and cite `nova-dev/gerrit-to-gitlab-skill-backport.md` and
-`nova-dev/gerrit-to-gitlab-readme.md`.
-
-Verify via curl:
+Only after reviewing the first result, try other queries or a
+different store if recovery hints suggest it:
 
 ```bash
 curl -s http://localhost:8321/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "Mcp-Session-Id: $SESSION" \
-  -d '{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"search","arguments":{"query":"backport gerrit gitlab cherry-pick","vector_store_id":"nova-dev","top_k":3}}}'
+  -d '{
+    "jsonrpc":"2.0","id":6,
+    "method":"tools/call",
+    "params":{
+      "name":"search",
+      "arguments":{
+        "query":"bug triage launchpad",
+        "vector_store_id":"nova-dev",
+        "top_k":3
+      }
+    }
+  }'
+```
+
+### Step 5 — Recovery hints on empty results
+
+When nothing matches, the server returns suggestions — broader
+terms, alternative stores — instead of an empty response:
+
+```bash
+curl -s http://localhost:8321/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Mcp-Session-Id: $SESSION" \
+  -d '{
+    "jsonrpc":"2.0","id":7,
+    "method":"tools/call",
+    "params":{
+      "name":"search",
+      "arguments":{
+        "query":"xyzzy frobnicator",
+        "vector_store_id":"nova-dev",
+        "top_k":3
+      }
+    }
+  }'
+```
+
+Response:
+
+```
+No results found for "xyzzy frobnicator" in store "nova-dev".
+
+**Suggestions**:
+- Try broader terms: "xyzzy", "frobnicator"
+- Try a different store: "openstack-code" — ...
+- Available stores: nova-dev, openstack-code, openstack-docs
 ```
 
 ### Troubleshooting
@@ -274,21 +293,29 @@ If the agent does not invoke the search tool, check that:
 ```
 Agent (Cursor / Claude Code)
   │
-  ├─ reads .cursor/rules/rag-nova-dev.mdc
-  │   → learns: "Nova dev knowledge available via RAG MCP server"
+  ├─ reads .cursor/rules/rag-knowledge-mcp.mdc (alwaysApply)
+  │   → learns: "use progressive discovery for RAG search"
   │
   ├─ user asks: "How does the conductor boundary work?"
   │
-  ├─ agent decides to call search tool
-  │   → search(query="conductor boundary", vector_store_id="nova-dev")
+  ├─ reads knowledge://stores  (Level 1 — discover)
+  │   → response lists: nova-dev, openstack-code, openstack-docs
+  │
+  ├─ picks "nova-dev" based on store descriptions
+  │
+  ├─ search(query="conductor boundary",
+  │         vector_store_id="nova-dev")
   │
   ├─ rag-mcp-server (mock backend)
+  │   → validates vector_store_id exists
   │   → scans knowledge/nova-dev/*.md for keyword matches
   │   → returns formatted markdown with source attribution
   │
-  └─ agent injects results into context, generates response
+  └─ agent summarizes results, cites sources
 ```
 
-The advisory rule has empty globs (`globs: []`), so it is always visible
-to the agent but never auto-activated by file edits. The agent reads it
-and decides when to invoke the search based on the user's question.
+The `rag-knowledge-mcp.mdc` rule (alwaysApply) enforces progressive
+discovery: the agent must read `knowledge://stores` and pick a store
+before calling `search`. Store-specific advisory rules like
+`rag-nova-dev.mdc` (globs: []) provide a shortcut — when loaded,
+the agent already knows the store ID and can skip discovery.

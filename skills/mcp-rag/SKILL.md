@@ -202,10 +202,10 @@ Response shows the `search` tool with its input schema:
     "inputSchema": {
       "properties": {
         "query":          {"type": "string"},
-        "vector_store_id": {"type": "string", "default": ""},
+        "vector_store_id": {"type": "string"},
         "top_k":          {"type": "integer", "default": 5}
       },
-      "required": ["query"]
+      "required": ["query", "vector_store_id"]
     }
   }]
 }

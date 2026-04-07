@@ -19,14 +19,14 @@ to token budget, or filter by source. The `.mdc` rules remain prose.
 automated validation (does the referenced store exist? is the corpus current?),
 capability negotiation, and fully autonomous agentic SDLC workflows.
 
-**Implementation**: `src/rag_mcp/` — a FastMCP 3.x server with a pluggable
+**Implementation**: `src/rag_mcp/` - a FastMCP 3.x server with a pluggable
 backend interface (`BackendProtocol`). Two backends:
 
-- `MockBackend` — keyword search over local markdown files in `knowledge/`.
-- `SolrBackend` — wraps [okp-mcp](https://github.com/rhel-lightspeed/okp-mcp)'s
+- `MockBackend` - keyword search over local markdown files in `knowledge/`.
+- `SolrBackend` - wraps [okp-mcp](https://github.com/rhel-lightspeed/okp-mcp)'s
   Solr client (`_solr_query`, `_clean_query`) and result formatting
   (`_format_result`) as a library dependency, querying the OKP `portal` core.
-  No code replication — okp-mcp submodules are imported directly, bypassing its
+  No code replication - okp-mcp submodules are imported directly, bypassing its
   `__init__.py` to avoid triggering MCP tool registration.
 
 Advisory rules `rag-openstack.mdc` and `rag-project.mdc` point agents at the
@@ -293,8 +293,8 @@ List and inspect available knowledge domains. Follows the progressive
 disclosure pattern from [oopsyz/mcp](https://github.com/oopsyz/mcp)'s
 CLI-style API spec: compact catalog first, detailed help on demand.
 
-**Level 1 — catalog**: `list_resources` returns all available vector
-stores with compact summaries — lets agents discover what knowledge
+**Level 1 - catalog**: `list_resources` returns all available vector
+stores with compact summaries - lets agents discover what knowledge
 exists before deciding whether to search:
 
 ```json
@@ -305,9 +305,9 @@ exists before deciding whether to search:
 ]
 ```
 
-**Level 2 — store detail**: `read_resource("knowledge://{store_id}")`
-returns full store metadata — domain coverage, corpus freshness, access
-level — so the agent can decide whether to query this store for a given
+**Level 2 - store detail**: `read_resource("knowledge://{store_id}")`
+returns full store metadata - domain coverage, corpus freshness, access
+level - so the agent can decide whether to query this store for a given
 task:
 
 ```json
@@ -322,7 +322,7 @@ task:
 }
 ```
 
-**Level 3 — search**: the agent calls the `search` tool (see above)
+**Level 3 - search**: the agent calls the `search` tool (see above)
 with the chosen `vector_store_id`.
 
 ### Recovery hints
@@ -383,7 +383,7 @@ curl -s http://localhost:8000/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"resources/list"}' | jq .
 ```
 
-Response (compact catalog — names and summaries only):
+Response (compact catalog - names and summaries only):
 
 ```json
 {
@@ -417,7 +417,7 @@ curl -s http://localhost:8000/mcp \
   }' | jq .
 ```
 
-Response (full detail — domain coverage, freshness, access level):
+Response (full detail - domain coverage, freshness, access level):
 
 ```json
 {
@@ -521,7 +521,7 @@ config handles transport:
 }
 ```
 
-The agent then uses the same tool/resource calls internally — the
+The agent then uses the same tool/resource calls internally - the
 progressive discovery flow is identical regardless of transport.
 
 ## Backend options

@@ -9,18 +9,6 @@ and skills:
 for integration of local rules with external systems, with the main purpose of deduplicating
 rules and separating "upstream" guide lines from "downstream" implementation.
 
-Jira MCP servers for Cursor Agent
-=================================
-
-Requires Node.js runtime.
-Set required env vars:
-
-```bash
-export JIRATOKEN="your-jira-api-token"
-export JIRASPACE="https://yourorg.atlassian.net"
-export JIRAEMAIL="you@example.com"
-```
-
 Applying for misc shell agents
 ==============================
 
@@ -28,6 +16,10 @@ Globally (incuding claude code and cursor-agent tools):
 ```bash
 mkdir -p ~/.claude
 mkdir -p ~/.cursor
+mkdir -p /opt/go/src/github.com/bogdando
+cd /opt/go/src/github.com/bogdando
+git clone https://github.com/bogdando/opendev-agents
+cd opendev-agents
 
 cp CLAUDE.md ~/.claude/CLAUDE.md
 ln -sf ~/.claude/CLAUDE.md ~/.cursor/AGENTS.md
@@ -58,6 +50,9 @@ For a system-wide baseline that applies to every workspace regardless of
 project, copy and paste the contents of `base.mdc` into `Rules` of
 `Rules, Skills, Subagents` in Cursor settings.
 
+For Claude Code, add the `mcpServers` of `mcp.json` to
+`~/.claude/settings.json` or `.claude/settings.json`.
+
 ### Glob-to-Subsystem Mapping
 
 | Globs | Rule file | Subsystem |
@@ -74,6 +69,7 @@ project, copy and paste the contents of `base.mdc` into `Rules` of
 | `**/*.py`, `**/py.typed`, `**/*.pyi` | `typing.mdc` | mypy config, type hint best practices |
 | *(advisory, empty globs)* | `rag-openstack.mdc` | Community docs, deployment guides, API refs via RAG MCP |
 | *(advisory, empty globs)* | `rag-project.mdc` | Project specs, review history, release notes via RAG MCP |
+| *(advisory, empty globs)* | `rag-nova-dev.mdc` | Nova dev knowledge from external agentic workflows via RAG MCP |
 
 Globs use `**/` prefixes so they work across any OpenStack project
 
@@ -109,6 +105,18 @@ use the `search` tool from the `rag-knowledge` MCP server with
 `vector_store_id: "openstack-docs"` to retrieve relevant documentation.
 ```
 
+Jira MCP server
+===============
+
+Requires Node.js runtime.
+Set required env vars:
+
+```bash
+export JIRATOKEN="your-jira-api-token"
+export JIRASPACE="https://yourorg.atlassian.net"
+export JIRAEMAIL="you@example.com"
+```
+
 RAG MCP Server
 ==============
 
@@ -116,11 +124,13 @@ A thin MCP server that exposes knowledge stores as searchable tools and
 URI-addressable resources. The agent gets formatted markdown injected
 directly into its context window. See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md).
 
-Install and run (mock backend with local markdown files):
+Install:
 ```bash
 pip install -e .
-rag-mcp-server  # stdio transport by default
 ```
+
+The `rag-knowledge` MCP server can use the `search` tool and
+`knowledge://` resources of that `rag-mcp-server` via the `@mcp-rag.md` skill.
 
 Configuration via environment variables (prefix `RAG_MCP_`):
 
@@ -134,15 +144,52 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
 
-**Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` — each
+**Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
 subdirectory name becomes a `vector_store_id`. Add `.md` files to populate stores.
+Use an absolute path for `RAG_MCP_KNOWLEDGE_DIR` so the server works regardless
+of which workspace is open.
 
 **Solr backend** connects to a Solr/OKP instance at `RAG_MCP_SOLR_URL` and
 queries the `portal` core using okp-mcp's Solr client and formatting modules
-(imported as a library dependency — no code replication). Requires a running
+(imported as a library dependency). Requires a running
 Solr instance with the OKP schema. Returns formatted markdown with
 highlights, annotations, and source URLs:
 
 ```bash
 RAG_MCP_BACKEND=solr RAG_MCP_SOLR_URL=http://solr.example.com:8983 rag-mcp-server
 ```
+
+For manual use, start the server with `streamable-http` transport so you can interact
+with it via `curl`:
+
+```bash
+RAG_MCP_BACKEND=mock \
+RAG_MCP_KNOWLEDGE_DIR=./knowledge \
+RAG_MCP_TRANSPORT=streamable-http \
+RAG_MCP_PORT=8321 \
+rag-mcp-server
+```
+
+The server starts at `http://localhost:8321/mcp`.
+
+### Skills
+
+| Skill | File | Purpose |
+|-------|------|---------|
+| MCP RAG CLI | `skills/mcp-rag.md` | CLI navigation guide for the RAG MCP server via `curl` - session init, progressive store discovery, search, recovery hints |
+| OpenStack Review | `skills/or/SKILL.md` | OpenStack Gerrit code review analysis |
+| Spec-Only Review | `skills/sor/SKILL.md` | OpenStack spec-only review |
+
+The `mcp-rag` skill is referenced by advisory rules (e.g. `rag-nova-dev.mdc`)
+so the agent knows the MCP protocol mechanics - how to start the server,
+initialize a session, discover stores, call the `search` tool, and stop the
+server when done.
+
+### External knowledge stores
+
+The mock backend can serve any local markdown repository as a knowledge
+store. See [docs/external-agentic-workflows.md](./docs/external-agentic-workflows.md)
+for a step-by-step guide using
+[openstack-agentic-workflows](https://github.com/sbauza/openstack-agentic-workflows)
+as a `nova-dev` store - including store setup via symlinks, CLI
+verification, IDE configuration, and the `rag-nova-dev.mdc` advisory rule.

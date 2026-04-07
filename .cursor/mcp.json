@@ -13,7 +13,7 @@
       "command": "rag-mcp-server",
       "env": {
         "RAG_MCP_BACKEND": "mock",
-        "RAG_MCP_KNOWLEDGE_DIR": "./knowledge"
+        "RAG_MCP_KNOWLEDGE_DIR": "/opt/go/src/github.com/bogdando/opendev-agents/knowledge"
       }
     }
   }

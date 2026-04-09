@@ -65,15 +65,6 @@ This is the strongest single-agent approach: deep context in the
 primary domain, plus on-demand retrieval for everything else, with
 no orchestrator needed.
 
-Multiple subagent personas only add value when you need:
-
-- **Parallel** domain expertise (e.g. two personas reviewing the
-  same patch from different angles simultaneously)
-- **Isolation** between domains (each persona has its own tool set
-  or separate context window)
-- The combined context of persona + search results would exceed a
-  single context window
-
 ## The overlap in this repo
 
 The `openstack-agentic-workflows` personas (`nova-core.md`,

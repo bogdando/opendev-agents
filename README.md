@@ -72,11 +72,11 @@ For Claude Code, add the `mcpServers` of `mcp.json` to
 | `**/conf/**/*.py`, `**/conf/*.py` | `oslo-config.mdc` | oslo.config option definitions, CONF patterns |
 | `**/api/**/*.py`, `**/api-paste.ini`, `**/policies/**/*.py`, `**/policy.py` | `api.mdc` | REST controllers, webob, policy |
 | `**/*.py`, `**/py.typed`, `**/*.pyi` | `typing.mdc` | mypy config, type hint best practices |
-| *(advisory, empty globs)* | `rag-openstack.mdc` | Community docs, deployment guides, API refs via RAG MCP |
-| *(advisory, empty globs)* | `rag-project.mdc` | Project specs, review history, release notes via RAG MCP |
-| *(advisory, empty globs)* | `rag-nova-dev.mdc` | Nova dev knowledge from external agentic workflows via RAG MCP |
+| *(advisory, empty globs)* | `knowledge/*` | openstack projects specifc knowledge, upstream vs downstream nuances, vendor specifics |
 
-Globs use `**/` prefixes so they work across any OpenStack project
+Always applied may also relate to generic upstream opendev knowledge and common for openstack projects knowledge.
+Globs use `**/` prefixes so they work across any OpenStack project.
+Advisory rules are situation based and should point the agents to external knowledge stores (and help to discover those).
 
 ### Rule frontmatter reference
 
@@ -98,16 +98,18 @@ globs:
 ---
 ```
 
-Empty-glob advisory rule pointing to the RAG MCP server (agent decides when to use it):
+Empty-glob advisory rules must be helping the agents to discover external
+knowledge sources via the RAG MCP server. The agents decide when to use it or not:
 ```yaml
 ---
-description: OpenStack community knowledge (docs, deployment guides, API refs)
+description: A project-specific knowledge
 globs: []
 ---
 
-When answering questions about OpenStack deployment, networking, storage,
-use the `search` tool from the `rag-knowledge` MCP server with
-`vector_store_id: "openstack-docs"` to retrieve relevant documentation.
+When answering questions about project X architecture, design decisions,
+or release-specific changes, read the `knowledge://stores` resource from
+the `rag-knowledge` MCP server to discover available stores, then use the
+`search` tool with the appropriate `vector_store_id`.
 ```
 
 Jira MCP server

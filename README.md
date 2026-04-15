@@ -10,7 +10,9 @@ and skills:
 rules with external systems, with the main purpose of deduplicating rules and separating
 "upstream" guide lines from "downstream" implementation. See also
 [search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
-knowledge retrieval approaches.
+knowledge retrieval approaches, and
+[long-running subagents](docs/long-running-subagents.md) for how deep agents
+maintain instructional consistency over extended sessions.
 
 Applying for misc shell agents
 ==============================

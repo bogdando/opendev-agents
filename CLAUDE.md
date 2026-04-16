@@ -2,6 +2,8 @@
 description: Global instructions
 alwaysApply: true
 ---
+# NOTE: suboptimal tokens consumption, prefer splitting it into personas
+# or glob based rules, if supported.
 
 # OpenStack Development Guidelines
 

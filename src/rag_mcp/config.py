@@ -22,7 +22,11 @@ class ServerConfig(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
-    backend: Literal["mock", "solr"] = "mock"
+    backend: Literal["mock", "solr", "confluence"] = "mock"
     knowledge_dir: str = "./knowledge"
     solr_url: str = "http://localhost:8983"
+    confluence_url: str = ""
+    confluence_email: str = ""
+    confluence_token: str = ""
+    confluence_space: str = ""
     max_response_chars: int = Field(default=30000, ge=1)

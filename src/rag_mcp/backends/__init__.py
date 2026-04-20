@@ -32,4 +32,35 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
 
         return SolrBackend(config.solr_url, config.max_response_chars)
 
+    if config.backend == "confluence":
+        from rag_mcp.backends.confluence import ConfluenceBackend
+
+        spaces = [
+            s.strip()
+            for s in config.confluence_space.split(",")
+            if s.strip()
+        ]
+        if not spaces:
+            raise ValueError(
+                "RAG_MCP_CONFLUENCE_SPACE must list at least one "
+                "Confluence space key (comma-separated)"
+            )
+        if not config.confluence_url:
+            raise ValueError(
+                "RAG_MCP_CONFLUENCE_URL is required for the "
+                "confluence backend"
+            )
+        if not config.confluence_email or not config.confluence_token:
+            raise ValueError(
+                "RAG_MCP_CONFLUENCE_EMAIL and RAG_MCP_CONFLUENCE_TOKEN "
+                "are required for the confluence backend"
+            )
+        return ConfluenceBackend(
+            base_url=config.confluence_url,
+            email=config.confluence_email,
+            token=config.confluence_token,
+            spaces=spaces,
+            max_response_chars=config.max_response_chars,
+        )
+
     raise ValueError(f"Unknown backend: {config.backend!r}")

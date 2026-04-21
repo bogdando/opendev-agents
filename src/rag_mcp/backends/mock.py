@@ -1,9 +1,13 @@
-"""Mock backend: keyword search over local markdown files.
+"""Mock backend: keyword search over local text files.
 
-Directory layout expected under *knowledge_dir*::
+Searches ``.md``, ``.rst``, ``.adoc``, and ``.txt`` files recursively
+under each store subdirectory.  Directory layout expected under
+*knowledge_dir*::
 
     knowledge/
     ├── openstack-docs/      <- store_id = "openstack-docs"
+    │   ├── admin/
+    │   │   └── scheduling.rst
     │   ├── l3-agent.md
     │   └── neutron-ovn.md
     └── openstack-code/      <- store_id = "openstack-code"
@@ -18,9 +22,21 @@ from pathlib import Path
 
 from rag_mcp.constants import SEARCH_STOP_WORDS
 
+_TEXT_EXTENSIONS = frozenset((".md", ".rst", ".adoc", ".txt"))
+
+_MAX_COVERAGE_ITEMS = 50
+
+
+def _text_files(root: Path) -> list[Path]:
+    """Return all searchable text files under *root*, recursively."""
+    return sorted(
+        p for p in root.rglob("*")
+        if p.is_file() and p.suffix in _TEXT_EXTENSIONS
+    )
+
 
 class MockBackend:
-    """Keyword-match backend backed by a directory of markdown files."""
+    """Keyword-match backend backed by a directory of text files."""
 
     def __init__(self, knowledge_dir: str) -> None:
         self._root = Path(knowledge_dir)
@@ -29,26 +45,36 @@ class MockBackend:
         if not self._root.is_dir():
             return []
         return sorted(
-            p for p in self._root.iterdir() if p.is_dir() and not p.name.startswith(".")
+            p for p in self._root.iterdir()
+            if p.is_dir() and not p.name.startswith(".")
         )
 
     async def list_stores(self) -> list[dict]:
         stores: list[dict] = []
         for d in self._store_dirs():
-            md_files = list(d.glob("*.md"))
-            mtime = max((f.stat().st_mtime for f in md_files), default=0.0)
+            files = _text_files(d)
+            mtime = max(
+                (f.stat().st_mtime for f in files), default=0.0
+            )
             freshness = (
-                datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                datetime.fromtimestamp(
+                    mtime, tz=timezone.utc
+                ).isoformat()
                 if mtime
                 else "unknown"
             )
-            coverage = sorted(f.stem.replace("-", " ") for f in md_files)
+            coverage = sorted(
+                f.stem.replace("-", " ") for f in files
+            )[:_MAX_COVERAGE_ITEMS]
             stores.append(
                 {
                     "id": d.name,
                     "name": d.name.replace("-", " ").title(),
-                    "description": f"Local markdown knowledge store ({len(md_files)} files)",
-                    "doc_count": len(md_files),
+                    "description": (
+                        f"Local knowledge store"
+                        f" ({len(files)} files)"
+                    ),
+                    "doc_count": len(files),
                     "last_updated": freshness,
                     "access": "public",
                     "freshness": freshness,
@@ -72,7 +98,9 @@ class MockBackend:
 
         query_lower = query.lower()
         keywords = [
-            kw for kw in query_lower.split() if kw not in SEARCH_STOP_WORDS
+            kw
+            for kw in query_lower.split()
+            if kw not in SEARCH_STOP_WORDS
         ]
         if not keywords:
             keywords = query_lower.split()
@@ -81,13 +109,15 @@ class MockBackend:
 
         scored: list[tuple[float, Path, str]] = []
 
-        for md_file in store_dir.glob("*.md"):
-            text = md_file.read_text(errors="replace")
+        for text_file in _text_files(store_dir):
+            text = text_file.read_text(errors="replace")
             text_lower = text.lower()
-            hits = sum(1 for kw in keywords if kw in text_lower)
+            hits = sum(
+                1 for kw in keywords if kw in text_lower
+            )
             if hits > 0:
                 score = hits / len(keywords)
-                scored.append((score, md_file, text))
+                scored.append((score, text_file, text))
 
         scored.sort(key=lambda t: t[0], reverse=True)
 
@@ -110,9 +140,24 @@ class MockBackend:
 
 
 def _extract_title(text: str, path: Path) -> str:
-    """Pull the first markdown heading, or fall back to filename."""
-    for line in text.splitlines():
+    """Extract the first heading from markdown or RST text."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("# "):
             return stripped.lstrip("# ").strip()
+        # RST heading: non-empty line followed by an underline of
+        # =, -, ~, ^, or " characters spanning at least its length.
+        if (
+            stripped
+            and i + 1 < len(lines)
+            and not stripped.startswith(".")
+        ):
+            next_line = lines[i + 1].strip()
+            if (
+                len(next_line) >= len(stripped)
+                and next_line
+                and set(next_line) <= set("=-~^\"")
+            ):
+                return stripped
     return path.stem.replace("-", " ").title()

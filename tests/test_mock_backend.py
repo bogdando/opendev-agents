@@ -23,6 +23,18 @@ class TestExtractTitle(unittest.TestCase):
         text = "## Sub Heading\n\nbody"
         self.assertEqual("Sub Heading", _extract_title(text, Path("sub-heading.md")))
 
+    def test_rst_equals_underline(self):
+        text = "My RST Title\n============\n\nBody text."
+        self.assertEqual("My RST Title", _extract_title(text, Path("doc.rst")))
+
+    def test_rst_dash_underline(self):
+        text = "Section Name\n------------\n\nContent."
+        self.assertEqual("Section Name", _extract_title(text, Path("s.rst")))
+
+    def test_rst_directive_not_treated_as_heading(self):
+        text = ".. toctree::\n===========\n\nReal Title\n==========\n"
+        self.assertEqual("Real Title", _extract_title(text, Path("x.rst")))
+
 
 class TestMockBackendListStores(unittest.TestCase):
 
@@ -57,6 +69,26 @@ class TestMockBackendListStores(unittest.TestCase):
     def test_doc_count(self):
         stores = asyncio.run(self.backend.list_stores())
         self.assertEqual(2, stores[0]["doc_count"])
+
+    def test_rst_files_counted(self):
+        store = self.root / "rst-store"
+        store.mkdir()
+        (store / "guide.rst").write_text("Guide\n=====\n\nRST content.")
+        (store / "notes.txt").write_text("Plain text notes.")
+        stores = asyncio.run(self.backend.list_stores())
+        rst_store = [s for s in stores if s["id"] == "rst-store"][0]
+        self.assertEqual(2, rst_store["doc_count"])
+
+    def test_nested_files_counted(self):
+        store = self.root / "nested-store"
+        store.mkdir()
+        sub = store / "admin"
+        sub.mkdir()
+        (sub / "config.rst").write_text("Config\n======\n")
+        (store / "index.md").write_text("# Index\n")
+        stores = asyncio.run(self.backend.list_stores())
+        ns = [s for s in stores if s["id"] == "nested-store"][0]
+        self.assertEqual(2, ns["doc_count"])
 
     def test_hidden_dirs_ignored(self):
         (self.root / ".hidden").mkdir()
@@ -156,6 +188,74 @@ class TestMockBackendSearch(unittest.TestCase):
         # Fallback path: keywords become ["the", "and", "or"]; at least one
         # doc in the fixture contains common English (e.g. "and" in body).
         self.assertGreater(len(results), 0)
+
+
+class TestMockBackendSearchRST(unittest.TestCase):
+    """Search over .rst files and nested directories."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        store = self.root / "nova-docs"
+        store.mkdir()
+        (store / "index.rst").write_text(
+            "Nova Documentation\n"
+            "==================\n\n"
+            "Welcome to the Nova compute service.\n"
+        )
+        sub = store / "admin"
+        sub.mkdir()
+        (sub / "scheduling.rst").write_text(
+            "Scheduling\n"
+            "==========\n\n"
+            "Filter and weigher architecture for placement.\n"
+        )
+        (sub / "live-migration.rst").write_text(
+            "Live Migration\n"
+            "==============\n\n"
+            "Move running instances between hosts.\n"
+        )
+        (store / "notes.txt").write_text(
+            "Release notes: fixed live migration bug.\n"
+        )
+        self.backend = MockBackend(str(self.root))
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_rst_keyword_match(self):
+        results = asyncio.run(
+            self.backend.search("scheduling placement", "nova-docs", 5)
+        )
+        self.assertGreaterEqual(len(results), 1)
+        titles = [r["metadata"]["title"] for r in results]
+        self.assertIn("Scheduling", titles)
+
+    def test_nested_rst_found(self):
+        results = asyncio.run(
+            self.backend.search("live migration hosts", "nova-docs", 5)
+        )
+        self.assertGreaterEqual(len(results), 1)
+        sources = [r["source"] for r in results]
+        nested = [s for s in sources if "admin" in s]
+        self.assertGreater(len(nested), 0)
+
+    def test_txt_files_searched(self):
+        results = asyncio.run(
+            self.backend.search("release notes migration", "nova-docs", 5)
+        )
+        sources = [r["source"] for r in results]
+        txt_hits = [s for s in sources if s.endswith(".txt")]
+        self.assertGreater(len(txt_hits), 0)
+
+    def test_rst_title_extracted(self):
+        results = asyncio.run(
+            self.backend.search("compute service", "nova-docs", 5)
+        )
+        self.assertGreaterEqual(len(results), 1)
+        self.assertEqual(
+            "Nova Documentation", results[0]["metadata"]["title"]
+        )
 
 
 if __name__ == "__main__":

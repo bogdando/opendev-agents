@@ -25,6 +25,13 @@
         "RAG_MCP_CONFLUENCE_TOKEN": "${CONFLUENCETOKEN}",
         "RAG_MCP_CONFLUENCE_SPACE": "${CONFLUENCESPACE}"
       }
+    },
+    "rag-knowledge-okp": {
+      "command": "rag-mcp-server",
+      "env": {
+        "RAG_MCP_BACKEND": "solr",
+        "RAG_MCP_SOLR_URL": "http://localhost:8080"
+      }
     }
   }
 }

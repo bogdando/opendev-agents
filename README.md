@@ -142,10 +142,11 @@ Install:
 pip install -e .
 ```
 
-Two MCP server entries are preconfigured in `.cursor/mcp.json`:
+Example configs for MCP servers are provided in `.cursor/mcp.json`:
 
-- **`rag-knowledge`** — mock backend, searches local markdown under `knowledge/`
+- **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files
 - **`rag-knowledge-wiki`** — confluence backend, searches Atlassian Confluence spaces
+- **`rag-knowledge-okp`** — Solr/OKP backend, searches Red Hat Customer Portal knowledgebase (solutions, articles, CVEs, errata, docs). Requires a local OKP Solr container running.
 
 Set required env vars:
 
@@ -202,7 +203,12 @@ RAG_MCP_BACKEND=confluence rag-mcp-server
 
 Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE_SPACE`).
 
-For manual use, start the server with `streamable-http` transport so you can interact
+**OKP/Solr backend** queries a Solr instance with the OKP schema.
+Set `RAG_MCP_SOLR_URL` in `mcp.json` to point at your Solr endpoint.
+Inside the OKP container, Solr binds to loopback only — use the httpd
+proxy port (8080) instead of the Solr port (8983).
+
+For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
 with it via `curl`:
 
 ```bash

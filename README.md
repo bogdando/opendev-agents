@@ -130,6 +130,8 @@ export JIRASPACE="https://yourorg.atlassian.net"
 export JIRAEMAIL="you@example.com"
 ```
 
+Note that you may need to inline them in mcp.json instead.
+
 RAG MCP Server
 ==============
 
@@ -156,8 +158,9 @@ export CONFLUENCEEMAIL="you@example.com"
 export CONFLUENCETOKEN="your-api-token"
 export CONFLUENCESPACE="MYPROJECT"
 ```
+Note that you may need to inline them in mcp.json instead.
 
-Both use the same `rag-mcp-server` binary.  The `@mcp-rag` skill
+All servers use the same `rag-mcp-server` binary.  The `@mcp-rag` skill
 documents CLI interaction via `curl`.
 
 Configuration via environment variables (prefix `RAG_MCP_`):

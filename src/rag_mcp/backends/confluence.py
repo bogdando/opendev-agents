@@ -37,6 +37,39 @@ def _wiki_base_url(url: str) -> str:
     return f"{u}/wiki"
 
 
+def normalize_confluence_site_url(url: str) -> str:
+    """Return an absolute HTTP(S) site URL suitable for :class:`ConfluenceBackend`.
+
+    ``httpx`` requires a scheme. Bare hostnames (common misconfiguration)
+    get ``https://`` prepended. Path-only values, empty strings, and
+    unexpanded ``${...}`` placeholders are rejected with explicit errors
+    instead of failing later on ``knowledge://stores``.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        raise ValueError(
+            "CONFLUENCEURL is required for the confluence backend"
+        )
+    if "${" in raw:
+        raise ValueError(
+            "CONFLUENCEURL looks unexpanded (contains '${...}'). "
+            "Set the real wiki URL in the MCP server environment."
+        )
+    if raw.startswith("/"):
+        raise ValueError(
+            "CONFLUENCEURL must be an absolute URL with a scheme, e.g. "
+            "https://your-site.atlassian.net, not a path like '/wiki'."
+        )
+    if raw.startswith(("http://", "https://")):
+        return raw
+    if "://" in raw:
+        raise ValueError(
+            "CONFLUENCEURL must start with http:// or https:// "
+            f"(got {raw!r})"
+        )
+    return f"https://{raw}"
+
+
 def _html_to_text(raw: str) -> str:
     """Rough HTML-to-plaintext conversion for Confluence storage format."""
     text = raw.replace("<br/>", "\n").replace("<br>", "\n")
@@ -110,7 +143,9 @@ class ConfluenceBackend:
         spaces: list[str],
         max_response_chars: int,
     ) -> None:
-        self._base_url = _wiki_base_url(base_url)
+        self._base_url = _wiki_base_url(
+            normalize_confluence_site_url(base_url)
+        )
         self._spaces = spaces
         self._max_chars = max_response_chars
         self._client = httpx.AsyncClient(

@@ -13,6 +13,7 @@ from rag_mcp.backends.confluence import (
     _wiki_phrase_fallback_cql,
     _wiki_query_tokens,
     _wiki_search_cql,
+    normalize_confluence_site_url,
 )
 
 
@@ -45,6 +46,44 @@ class TestWikiBaseUrl(unittest.TestCase):
             max_response_chars=1000,
         )
         self.assertEqual("https://example.atlassian.net/wiki", b._base_url)
+
+    def test_backend_prepends_https_for_bare_hostname(self):
+        b = ConfluenceBackend(
+            base_url="example.atlassian.net",
+            email="t@e.com",
+            token="t",
+            spaces=["S"],
+            max_response_chars=1000,
+        )
+        self.assertEqual("https://example.atlassian.net/wiki", b._base_url)
+
+
+class TestNormalizeConfluenceSiteUrl(unittest.TestCase):
+
+    def test_preserves_https(self):
+        self.assertEqual(
+            "https://x.atlassian.net",
+            normalize_confluence_site_url("https://x.atlassian.net"),
+        )
+
+    def test_prepends_https_for_bare_host(self):
+        self.assertEqual(
+            "https://x.atlassian.net/wiki",
+            normalize_confluence_site_url("x.atlassian.net/wiki"),
+        )
+
+    def test_empty_raises(self):
+        with self.assertRaises(ValueError):
+            normalize_confluence_site_url("")
+
+    def test_unexpanded_placeholder_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            normalize_confluence_site_url("${CONFLUENCEURL}")
+        self.assertIn("unexpanded", str(ctx.exception).lower())
+
+    def test_path_only_raises(self):
+        with self.assertRaises(ValueError):
+            normalize_confluence_site_url("/wiki")
 
 
 class TestHtmlToText(unittest.TestCase):

@@ -70,6 +70,23 @@ class TestBackendFactory(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_backend(cfg)
 
+    def test_confluence_backend_prepends_https_for_bare_hostname(self):
+        from rag_mcp.backends import get_backend
+
+        env = {
+            "CONFLUENCEURL": "example.atlassian.net",
+            "CONFLUENCEEMAIL": "a@b.com",
+            "CONFLUENCETOKEN": "tok",
+            "CONFLUENCESPACE": "SPC",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig(backend="confluence")
+            backend = get_backend(cfg)
+        self.assertEqual(
+            "https://example.atlassian.net/wiki",
+            backend._base_url,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

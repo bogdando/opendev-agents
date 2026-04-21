@@ -15,6 +15,8 @@ from typing import Any
 
 import httpx
 
+from rag_mcp.constants import SEARCH_STOP_WORDS
+
 _HTTP_ERR_BODY_MAX = 800
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,60 @@ def _html_to_text(raw: str) -> str:
     text = text.replace("</p>", "\n\n").replace("</li>", "\n")
     text = _TAG_RE.sub("", text)
     return html.unescape(text).strip()
+
+
+def _cql_escape_literal(token: str) -> str:
+    """Escape a CQL string literal (inside double quotes)."""
+    return token.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _wiki_query_tokens(query: str) -> list[str]:
+    """Split query into tokens for full-text CQL (stop words removed).
+
+    If nothing remains after filtering, uses the whole trimmed query as one
+    phrase so short or stop-word-only queries still run.
+    """
+    raw_parts = [p for p in query.split() if p.strip()]
+    tokens: list[str] = []
+    for part in raw_parts:
+        w = part.strip().strip(".,;:()[]\"'")
+        if not w:
+            continue
+        if w.lower() in SEARCH_STOP_WORDS:
+            continue
+        tokens.append(w)
+    if tokens:
+        return tokens
+    q = query.strip()
+    return [q] if q else []
+
+
+def _wiki_search_cql(space_key: str, tokens: list[str]) -> str:
+    """Build CQL for space-scoped page/blog full-text search.
+
+    Each token must match in body *or* title (Confluence stemmed full-text).
+    Multiple tokens are ANDed. Results are newest first.
+    """
+    sk = _cql_escape_literal(space_key)
+    parts: list[str] = [
+        f'space = "{sk}"',
+        'type in ("page", "blogpost")',
+    ]
+    for tok in tokens:
+        lit = _cql_escape_literal(tok)
+        parts.append(f'(text ~ "{lit}" OR title ~ "{lit}")')
+    return " AND ".join(parts) + " order by lastModified desc"
+
+
+def _wiki_phrase_fallback_cql(space_key: str, phrase: str) -> str:
+    """Single phrase search when token AND returns nothing."""
+    sk = _cql_escape_literal(space_key)
+    lit = _cql_escape_literal(phrase.strip())
+    return (
+        f'space = "{sk}" AND type in ("page", "blogpost") '
+        f'AND (text ~ "{lit}" OR title ~ "{lit}") '
+        "order by lastModified desc"
+    )
 
 
 class ConfluenceBackend:
@@ -143,8 +199,11 @@ class ConfluenceBackend:
         if space_key is None:
             return []
 
-        escaped = query.replace('"', '\\"')
-        cql = f'space = "{space_key}" AND text ~ "{escaped}"'
+        tokens = _wiki_query_tokens(query)
+        if not tokens:
+            return []
+
+        cql = _wiki_search_cql(space_key, tokens)
         logger.debug(
             "Confluence search store_id=%s space_key=%s top_k=%s",
             store_id,
@@ -152,6 +211,11 @@ class ConfluenceBackend:
             top_k,
         )
         pages = await self._cql_search(cql, top_k)
+
+        if not pages and len(tokens) > 1:
+            fb = _wiki_phrase_fallback_cql(space_key, query)
+            logger.debug("Confluence phrase fallback after empty AND-token search")
+            pages = await self._cql_search(fb, top_k)
 
         results: list[dict] = []
         budget = self._max_chars

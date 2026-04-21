@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.backends.mock import MockBackend, _extract_title
 
 
@@ -140,6 +141,21 @@ class TestMockBackendSearch(unittest.TestCase):
         results = asyncio.run(self.backend.search("floating IPs router namespaces", "docs", 5))
         if len(results) > 1:
             self.assertEqual("L3 Agent", results[0]["metadata"]["title"])
+
+    def test_stop_words_removed_from_keywords(self):
+        """Mock uses SEARCH_STOP_WORDS; filler words must not block matches."""
+        self.assertIn("how", SEARCH_STOP_WORDS)
+        self.assertIn("to", SEARCH_STOP_WORDS)
+        results = asyncio.run(self.backend.search("how to scheduler", "docs", 5))
+        titles = [r["metadata"]["title"] for r in results]
+        self.assertIn("Nova Scheduler", titles)
+
+    def test_all_tokens_stop_words_falls_back_to_raw_split(self):
+        """If every token is a stop word, scoring uses the original split."""
+        results = asyncio.run(self.backend.search("the and or", "docs", 5))
+        # Fallback path: keywords become ["the", "and", "or"]; at least one
+        # doc in the fixture contains common English (e.g. "and" in body).
+        self.assertGreater(len(results), 0)
 
 
 if __name__ == "__main__":

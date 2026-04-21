@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import Context
 
+from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.formatting import format_results
 from rag_mcp.server import get_app_context, mcp
 
@@ -64,17 +65,6 @@ async def search(
     return _build_recovery_hints(query, vector_store_id, stores)
 
 
-# Short words unlikely to be meaningful query terms.
-_STOP_WORDS = frozenset({
-    "a", "an", "the", "in", "on", "at", "to", "of",
-    "is", "it", "do", "or", "by", "as", "if", "be",
-    "so", "no", "up", "my", "we", "he",
-    "how", "who", "what", "when", "where", "why",
-    "and", "but", "for", "not", "are", "was", "has",
-    "can", "did", "its", "our", "had", "may", "all",
-})
-
-
 def _find_unmatched_terms(
     query: str, results: list[dict]
 ) -> list[str]:
@@ -85,7 +75,7 @@ def _find_unmatched_terms(
     """
     terms = [
         t for t in query.lower().split()
-        if t not in _STOP_WORDS and len(t) > 2
+        if t not in SEARCH_STOP_WORDS and len(t) > 2
     ]
     if len(terms) <= 1:
         return []

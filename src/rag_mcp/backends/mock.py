@@ -16,6 +16,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from rag_mcp.constants import SEARCH_STOP_WORDS
+
 
 class MockBackend:
     """Keyword-match backend backed by a directory of markdown files."""
@@ -69,7 +71,14 @@ class MockBackend:
             return []
 
         query_lower = query.lower()
-        keywords = query_lower.split()
+        keywords = [
+            kw for kw in query_lower.split() if kw not in SEARCH_STOP_WORDS
+        ]
+        if not keywords:
+            keywords = query_lower.split()
+        if not keywords:
+            return []
+
         scored: list[tuple[float, Path, str]] = []
 
         for md_file in store_dir.glob("*.md"):

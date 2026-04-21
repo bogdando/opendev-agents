@@ -6,7 +6,14 @@ import asyncio
 import unittest
 from unittest import mock
 
-from rag_mcp.backends.confluence import ConfluenceBackend, _html_to_text, _wiki_base_url
+from rag_mcp.backends.confluence import (
+    ConfluenceBackend,
+    _html_to_text,
+    _wiki_base_url,
+    _wiki_phrase_fallback_cql,
+    _wiki_query_tokens,
+    _wiki_search_cql,
+)
 
 
 class TestWikiBaseUrl(unittest.TestCase):
@@ -183,7 +190,9 @@ class TestConfluenceSearch(unittest.TestCase):
         mock_response = mock.MagicMock()
         mock_response.status_code = 200
         mock_response.raise_for_status = mock.MagicMock()
-        mock_response.json.return_value = {"results": []}
+        # Non-empty first response so phrase fallback does not run (fallback
+        # would use the full query string as one CQL literal).
+        mock_response.json.return_value = {"results": [_confluence_page()]}
 
         with mock.patch.object(backend._client, "get", new_callable=mock.AsyncMock) as m:
             m.return_value = mock_response
@@ -191,7 +200,50 @@ class TestConfluenceSearch(unittest.TestCase):
 
         call_kwargs = m.call_args
         cql = call_kwargs.kwargs.get("params", call_kwargs[1].get("params", {}))["cql"]
-        self.assertIn('\\"quoted\\"', cql)
+        self.assertIn('text ~ "test"', cql)
+        self.assertIn('text ~ "quoted"', cql)
+        self.assertIn("title ~", cql)
+
+    def test_phrase_fallback_when_and_returns_nothing(self):
+        backend = _make_backend(["MYSPACE"])
+        empty = mock.MagicMock()
+        empty.status_code = 200
+        empty.raise_for_status = mock.MagicMock()
+        empty.json.return_value = {"results": []}
+        hit = mock.MagicMock()
+        hit.status_code = 200
+        hit.raise_for_status = mock.MagicMock()
+        hit.json.return_value = {"results": [_confluence_page()]}
+
+        with mock.patch.object(backend._client, "get", new_callable=mock.AsyncMock) as m:
+            m.side_effect = [empty, hit]
+            results = asyncio.run(backend.search("foo bar", "myspace", 5))
+
+        self.assertEqual(2, m.call_count)
+        self.assertEqual(1, len(results))
+
+
+class TestWikiCqlHelpers(unittest.TestCase):
+
+    def test_search_cql_and_tokens_title_or_text(self):
+        cql = _wiki_search_cql("RHOSO", ["nova", "cell"])
+        self.assertIn('space = "RHOSO"', cql)
+        self.assertIn('type in ("page", "blogpost")', cql)
+        self.assertIn('(text ~ "nova" OR title ~ "nova")', cql)
+        self.assertIn('(text ~ "cell" OR title ~ "cell")', cql)
+        self.assertIn("order by lastModified desc", cql)
+
+    def test_query_tokens_strips_quotes(self):
+        self.assertEqual(["test", "quoted"], _wiki_query_tokens('test "quoted"'))
+
+    def test_phrase_fallback_cql(self):
+        cql = _wiki_phrase_fallback_cql("S", "hello world")
+        self.assertIn('space = "S"', cql)
+        self.assertIn('text ~ "hello world"', cql)
+
+    def test_phrase_fallback_escapes_inner_quotes(self):
+        cql = _wiki_phrase_fallback_cql("S", "say \"hi\"")
+        self.assertIn('\\"hi\\"', cql)
 
 
 class TestResolveSpaceKey(unittest.TestCase):

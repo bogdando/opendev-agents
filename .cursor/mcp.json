@@ -15,6 +15,16 @@
         "RAG_MCP_BACKEND": "mock",
         "RAG_MCP_KNOWLEDGE_DIR": "/opt/go/src/github.com/bogdando/opendev-agents/knowledge"
       }
+    },
+    "rag-knowledge-wiki": {
+      "command": "rag-mcp-server",
+      "env": {
+        "RAG_MCP_BACKEND": "confluence",
+        "RAG_MCP_CONFLUENCE_URL": "${CONFLUENCE_URL}",
+        "RAG_MCP_CONFLUENCE_EMAIL": "${CONFLUENCE_EMAIL}",
+        "RAG_MCP_CONFLUENCE_TOKEN": "${CONFLUENCE_TOKEN}",
+        "RAG_MCP_CONFLUENCE_SPACE": "${CONFLUENCE_SPACE}"
+      }
     }
   }
 }

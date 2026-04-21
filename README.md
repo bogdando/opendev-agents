@@ -142,8 +142,22 @@ Install:
 pip install -e .
 ```
 
-The `rag-knowledge` MCP server can use the `search` tool and
-`knowledge://` resources of that `rag-mcp-server` via the `@mcp-rag.md` skill.
+Two MCP server entries are preconfigured in `.cursor/mcp.json`:
+
+- **`rag-knowledge`** — mock backend, searches local markdown under `knowledge/`
+- **`rag-knowledge-wiki`** — confluence backend, searches Atlassian Confluence spaces
+
+Set required env vars:
+
+```bash
+export CONFLUENCE_URL="https://yourorg.atlassian.net/wiki"
+export CONFLUENCE_EMAIL="you@example.com"
+export CONFLUENCE_TOKEN="your-api-token"
+export CONFLUENCE_SPACE="MYPROJECT"
+```
+
+Both use the same `rag-mcp-server` binary.  The `@mcp-rag` skill
+documents CLI interaction via `curl`.
 
 Configuration via environment variables (prefix `RAG_MCP_`):
 

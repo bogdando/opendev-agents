@@ -129,6 +129,7 @@ class MockBackend:
                 {
                     "text": text,
                     "source": rel,
+                    "score": round(score, 4),
                     "metadata": {
                         "title": title,
                         "store_id": store_id,

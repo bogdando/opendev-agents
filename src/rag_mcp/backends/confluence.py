@@ -219,7 +219,8 @@ class ConfluenceBackend:
 
         results: list[dict] = []
         budget = self._max_chars
-        for page in pages:
+        total = len(pages) or 1
+        for rank, page in enumerate(pages):
             title = page.get("title", "Untitled")
             body_html = (
                 page.get("body", {}).get("view", {}).get("value", "")
@@ -239,6 +240,7 @@ class ConfluenceBackend:
                 {
                     "text": text,
                     "source": page_url,
+                    "score": round(1.0 - rank / total, 4),
                     "metadata": {
                         "title": title,
                         "store_id": store_id,

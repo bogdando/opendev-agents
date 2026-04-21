@@ -7,8 +7,20 @@ import unittest
 from rag_mcp.formatting import format_results
 
 
-def _make_result(title: str = "Test Title", text: str = "body", source: str = "src.md") -> dict:
-    return {"text": text, "source": source, "metadata": {"title": title}}
+def _make_result(
+    title: str = "Test Title",
+    text: str = "body",
+    source: str = "src.md",
+    score: float | None = None,
+) -> dict:
+    r: dict = {
+        "text": text,
+        "source": source,
+        "metadata": {"title": title},
+    }
+    if score is not None:
+        r["score"] = score
+    return r
 
 
 class TestFormatResults(unittest.TestCase):
@@ -45,6 +57,23 @@ class TestFormatResults(unittest.TestCase):
         result = {"text": "content", "metadata": {"title": "T"}}
         out = format_results([result], 30000)
         self.assertIn("**Source**: unknown", out)
+
+    def test_score_rendered_when_present(self):
+        out = format_results([_make_result(score=0.85)], 30000)
+        self.assertIn("relevance: 0.85", out)
+
+    def test_score_omitted_when_absent(self):
+        out = format_results([_make_result()], 30000)
+        self.assertNotIn("relevance", out)
+
+    def test_scores_shown_for_each_result(self):
+        results = [
+            _make_result(title="A", score=1.0),
+            _make_result(title="B", score=0.5),
+        ]
+        out = format_results(results, 30000)
+        self.assertIn("## A  (relevance: 1.00)", out)
+        self.assertIn("## B  (relevance: 0.50)", out)
 
 
 if __name__ == "__main__":

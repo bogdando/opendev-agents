@@ -164,10 +164,14 @@ class TestMockBackendSearch(unittest.TestCase):
         r = results[0]
         self.assertIn("text", r)
         self.assertIn("source", r)
+        self.assertIn("score", r)
         self.assertIn("metadata", r)
         self.assertIn("title", r["metadata"])
         self.assertIn("store_id", r["metadata"])
         self.assertEqual("docs", r["metadata"]["store_id"])
+        self.assertIsInstance(r["score"], float)
+        self.assertGreater(r["score"], 0.0)
+        self.assertLessEqual(r["score"], 1.0)
 
     def test_results_ranked_by_relevance(self):
         results = asyncio.run(self.backend.search("floating IPs router namespaces", "docs", 5))

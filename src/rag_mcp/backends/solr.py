@@ -50,6 +50,10 @@ class SolrBackend:
         if not docs:
             return []
 
+        max_score = data.get("response", {}).get(
+            "maxScore", 1.0
+        ) or 1.0
+
         results: list[dict] = []
         for doc in docs:
             formatted_text, _sort_key = await _format_result(
@@ -64,10 +68,14 @@ class SolrBackend:
             if isinstance(title, list):
                 title = title[0]
             url_path = doc_uri(doc)
+            raw_score = doc.get("score", 0.0)
             results.append(
                 {
                     "text": formatted_text,
                     "source": f"https://access.redhat.com{url_path}",
+                    "score": round(
+                        raw_score / max_score, 4
+                    ),
                     "metadata": {
                         "title": title,
                         "store_id": store_id,

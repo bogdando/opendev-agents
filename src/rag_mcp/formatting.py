@@ -22,8 +22,12 @@ def format_results(results: list[dict], max_chars: int) -> str:
         title = r.get("metadata", {}).get("title", "Untitled")
         source = r.get("source", "unknown")
         text = r.get("text", "")
+        score = r.get("score")
 
-        entry = f"## {title}\n\n{text}\n\n**Source**: {source}"
+        header = f"## {title}"
+        if score is not None:
+            header += f"  (relevance: {score:.2f})"
+        entry = f"{header}\n\n{text}\n\n**Source**: {source}"
         entry_len = len(entry) + len(_SEPARATOR)
 
         if used + entry_len > max_chars and parts:

@@ -167,10 +167,10 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_BACKEND` | `mock` | Backend type: `mock`, `solr`, or `confluence` |
 | `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
 | `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |
-| `RAG_MCP_CONFLUENCE_URL` | | Confluence site or wiki base, e.g. `https://yourorg.atlassian.net` |
-| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian account email (confluence backend) |
-| `RAG_MCP_CONFLUENCE_TOKEN` | | Atlassian API token (confluence backend) |
-| `RAG_MCP_CONFLUENCE_SPACE` | | Comma-separated space keys, e.g. `openstackk8s,RHOSO` |
+| `RAG_MCP_CONFLUENCE_URL` | | Confluence base (or `CONFLUENCEURL`) |
+| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`) |
+| `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
+| `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `openstackk8s,RHOSO` (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
@@ -196,15 +196,11 @@ search. Each configured space key becomes a `vector_store_id` (lowercased).
 Requires an [API token](https://id.atlassian.com/manage-profile/security/api-tokens):
 
 ```bash
-RAG_MCP_BACKEND=confluence \
-RAG_MCP_CONFLUENCE_URL=https://yourorg.atlassian.net \
-RAG_MCP_CONFLUENCE_EMAIL=you@example.com \
-RAG_MCP_CONFLUENCE_TOKEN=your-api-token \
-RAG_MCP_CONFLUENCE_SPACE=MYPROJECT \
-rag-mcp-server
+# With CONFLUENCEURL, CONFLUENCEEMAIL, CONFLUENCETOKEN, CONFLUENCESPACE exported:
+RAG_MCP_BACKEND=confluence rag-mcp-server
 ```
 
-Multiple spaces are comma-separated: `RAG_MCP_CONFLUENCE_SPACE=MYPROJECT,DOCS`.
+Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE_SPACE`).
 
 For manual use, start the server with `streamable-http` transport so you can interact
 with it via `curl`:

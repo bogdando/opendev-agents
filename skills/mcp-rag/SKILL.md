@@ -42,10 +42,10 @@ running the commands above. The full configuration table:
 | `RAG_MCP_BACKEND` | `mock` | Backend type: `mock`, `solr`, or `confluence` |
 | `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
 | `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |
-| `RAG_MCP_CONFLUENCE_URL` | | Confluence site or wiki base (confluence backend) |
-| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian account email (confluence backend) |
-| `RAG_MCP_CONFLUENCE_TOKEN` | | Atlassian API token (confluence backend) |
-| `RAG_MCP_CONFLUENCE_SPACE` | | Comma-separated space keys (confluence backend) |
+| `RAG_MCP_CONFLUENCE_URL` | | Confluence site or wiki base (or `CONFLUENCEURL`) |
+| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`) |
+| `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
+| `RAG_MCP_CONFLUENCE_SPACE` | | Comma-separated space keys (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
 | `RAG_MCP_LOG_LEVEL` | `INFO` | Use `DEBUG` for Confluence CQL logging |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
@@ -76,12 +76,13 @@ direct REST `curl` first (see project `README.md`, Debug Confluence search).
 2. **Same request as the backend** — The server calls
    `{wiki_base}/rest/api/content/search` with basic auth (email + API token).
    Example (encode `cql` for your shell; space key must match
-   `RAG_MCP_CONFLUENCE_SPACE`):
+   `CONFLUENCESPACE`):
 
 ```bash
-BASE="https://yourorg.atlassian.net/wiki"   # or site root; /wiki is added
+BASE="${CONFLUENCEURL%/}"   # site root or .../wiki; strip trailing /
+[[ "$BASE" == */wiki ]] || BASE="${BASE}/wiki"
 CQL='space = "MYPROJECT" AND text ~ "nova"'
-curl -sS -u "${RAG_MCP_CONFLUENCE_EMAIL}:${RAG_MCP_CONFLUENCE_TOKEN}" \
+curl -sS -u "${CONFLUENCEEMAIL}:${CONFLUENCETOKEN}" \
   --get "$BASE/rest/api/content/search" \
   --data-urlencode "cql=${CQL}" \
   --data-urlencode "limit=5" \

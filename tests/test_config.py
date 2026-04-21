@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import unittest
+from unittest import mock
 
 from rag_mcp.config import ServerConfig
 
@@ -28,6 +30,20 @@ class TestServerConfig(unittest.TestCase):
     def test_max_response_chars_minimum(self):
         cfg = ServerConfig(max_response_chars=1)
         self.assertEqual(1, cfg.max_response_chars)
+
+    def test_confluence_short_env_names(self):
+        env = {
+            "CONFLUENCEURL": "https://x.atlassian.net/wiki",
+            "CONFLUENCEEMAIL": "a@b.com",
+            "CONFLUENCETOKEN": "tok",
+            "CONFLUENCESPACE": "S1,S2",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual("https://x.atlassian.net/wiki", cfg.confluence_url)
+        self.assertEqual("a@b.com", cfg.confluence_email)
+        self.assertEqual("tok", cfg.confluence_token)
+        self.assertEqual("S1,S2", cfg.confluence_space)
 
 
 class TestBackendFactory(unittest.TestCase):

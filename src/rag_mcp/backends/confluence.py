@@ -1,7 +1,7 @@
 """Confluence backend: search Confluence spaces via REST API.
 
 Each configured space becomes a ``vector_store_id``.  Multiple spaces
-can be served by comma-separating them in ``RAG_MCP_CONFLUENCE_SPACE``.
+can be served by comma-separating them in ``CONFLUENCESPACE``.
 
 Requires Confluence Cloud (Atlassian) with an API token.
 """

@@ -3,11 +3,41 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import unittest
 from unittest import mock
 
-from rag_mcp.backends.confluence import ConfluenceBackend, _html_to_text
+from rag_mcp.backends.confluence import ConfluenceBackend, _html_to_text, _wiki_base_url
+
+
+class TestWikiBaseUrl(unittest.TestCase):
+
+    def test_appends_wiki_for_site_root(self):
+        self.assertEqual(
+            "https://example.atlassian.net/wiki",
+            _wiki_base_url("https://example.atlassian.net"),
+        )
+
+    def test_preserves_explicit_wiki_suffix(self):
+        self.assertEqual(
+            "https://example.atlassian.net/wiki",
+            _wiki_base_url("https://example.atlassian.net/wiki"),
+        )
+
+    def test_strips_trailing_slash(self):
+        self.assertEqual(
+            "https://example.atlassian.net/wiki",
+            _wiki_base_url("https://example.atlassian.net/wiki/"),
+        )
+
+    def test_backend_normalizes_site_root(self):
+        b = ConfluenceBackend(
+            base_url="https://example.atlassian.net",
+            email="t@e.com",
+            token="t",
+            spaces=["S"],
+            max_response_chars=1000,
+        )
+        self.assertEqual("https://example.atlassian.net/wiki", b._base_url)
 
 
 class TestHtmlToText(unittest.TestCase):

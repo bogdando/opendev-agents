@@ -39,10 +39,15 @@ running the commands above. The full configuration table:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAG_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
-| `RAG_MCP_BACKEND` | `mock` | Backend type: `mock` or `solr` |
+| `RAG_MCP_BACKEND` | `mock` | Backend type: `mock`, `solr`, or `confluence` |
 | `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
 | `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |
+| `RAG_MCP_CONFLUENCE_URL` | | Confluence site or wiki base (confluence backend) |
+| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian account email (confluence backend) |
+| `RAG_MCP_CONFLUENCE_TOKEN` | | Atlassian API token (confluence backend) |
+| `RAG_MCP_CONFLUENCE_SPACE` | | Comma-separated space keys (confluence backend) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
+| `RAG_MCP_LOG_LEVEL` | `INFO` | Use `DEBUG` for Confluence CQL logging |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
 
@@ -56,6 +61,38 @@ queries the `portal` core using okp-mcp's Solr client and formatting modules
 (imported as a library dependency). Requires a running
 Solr instance with the OKP schema. Returns formatted markdown with
 highlights, annotations, and source URLs
+
+**Confluence backend** uses each configured space key as a `vector_store_id`
+(lowercased). Use the same `initialize` / `resources/read` / `tools/call`
+flow; set `vector_store_id` to that lowercase key. Verify credentials with
+direct REST `curl` first (see project `README.md`, Debug Confluence search).
+
+
+**Debug Confluence search with curl**
+
+1. **Logs** — Run with `RAG_MCP_LOG_LEVEL=DEBUG`. Logs include the resolved wiki
+   base URL path, CQL string, and hit count (never the API token).
+
+2. **Same request as the backend** — The server calls
+   `{wiki_base}/rest/api/content/search` with basic auth (email + API token).
+   Example (encode `cql` for your shell; space key must match
+   `RAG_MCP_CONFLUENCE_SPACE`):
+
+```bash
+BASE="https://yourorg.atlassian.net/wiki"   # or site root; /wiki is added
+CQL='space = "MYPROJECT" AND text ~ "nova"'
+curl -sS -u "${RAG_MCP_CONFLUENCE_EMAIL}:${RAG_MCP_CONFLUENCE_TOKEN}" \
+  --get "$BASE/rest/api/content/search" \
+  --data-urlencode "cql=${CQL}" \
+  --data-urlencode "limit=5" \
+  --data-urlencode "expand=body.view,version,space" | python3 -m json.tool
+```
+
+   If this `curl` fails, fix URL, token, or space key before debugging MCP.
+
+3. **MCP over HTTP** — Start with `RAG_MCP_TRANSPORT=streamable-http`, then use
+   `skills/mcp-rag/SKILL.md`: `vector_store_id` is the space key in **lowercase**
+   (e.g. `MYPROJECT` → `myproject`). Session and `tools/call` match the mock flow.
 
 ## Shell helper
 

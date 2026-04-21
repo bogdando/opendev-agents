@@ -15,9 +15,24 @@ from typing import Any
 
 import httpx
 
+_HTTP_ERR_BODY_MAX = 800
+
 logger = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _wiki_base_url(url: str) -> str:
+    """Confluence Cloud REST API lives under ``/wiki``.
+
+    Accept either ``https://site.atlassian.net`` or ``.../wiki`` so callers
+    can set ``CONFLUENCEURL`` to the site root (same as Jira) without
+    duplicating ``/wiki`` in docs and env.
+    """
+    u = url.rstrip("/")
+    if u.endswith("/wiki"):
+        return u
+    return f"{u}/wiki"
 
 
 def _html_to_text(raw: str) -> str:
@@ -39,13 +54,14 @@ class ConfluenceBackend:
         spaces: list[str],
         max_response_chars: int,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = _wiki_base_url(base_url)
         self._spaces = spaces
         self._max_chars = max_response_chars
         self._client = httpx.AsyncClient(
             timeout=30.0,
             auth=(email, token),
         )
+        logger.debug("Confluence backend wiki base URL: %s", self._base_url)
 
     async def _cql_search(
         self, cql: str, limit: int
@@ -57,9 +73,26 @@ class ConfluenceBackend:
             "limit": str(limit),
             "expand": "body.view,version,space",
         }
-        resp = await self._client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json().get("results", [])
+        logger.debug(
+            "Confluence CQL search GET %s limit=%s",
+            url,
+            params.get("limit"),
+        )
+        logger.debug("Confluence CQL: %s", cql)
+        try:
+            resp = await self._client.get(url, params=params)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            body = (e.response.text or "")[:_HTTP_ERR_BODY_MAX]
+            logger.warning(
+                "Confluence CQL search HTTP %s: %s",
+                e.response.status_code,
+                body,
+            )
+            raise
+        results = resp.json().get("results", [])
+        logger.debug("Confluence CQL returned %d page(s)", len(results))
+        return results
 
     async def _get_space_info(self, space_key: str) -> dict[str, Any]:
         url = f"{self._base_url}/rest/api/space/{space_key}"
@@ -112,6 +145,12 @@ class ConfluenceBackend:
 
         escaped = query.replace('"', '\\"')
         cql = f'space = "{space_key}" AND text ~ "{escaped}"'
+        logger.debug(
+            "Confluence search store_id=%s space_key=%s top_k=%s",
+            store_id,
+            space_key,
+            top_k,
+        )
         pages = await self._cql_search(cql, top_k)
 
         results: list[dict] = []

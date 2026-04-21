@@ -168,8 +168,9 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
 | `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |
 | `RAG_MCP_CONFLUENCE_URL` | | Confluence base (or `CONFLUENCEURL`) |
-| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`) |
-| `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
+| `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`; omit for OAuth) |
+| `RAG_MCP_CONFLUENCE_TOKEN` | | Classic API token **or** OAuth 2.0 access token (or `CONFLUENCETOKEN`) |
+| `RAG_MCP_CONFLUENCE_AUTH` | `oauth` | `oauth` (Bearer access token) or `basic` (email + classic API token); or `CONFLUENCEAUTH` |
 | `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `openstackk8s,RHOSO` (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
@@ -193,10 +194,18 @@ RAG_MCP_BACKEND=solr RAG_MCP_SOLR_URL=http://solr.example.com:8983 rag-mcp-serve
 
 **Confluence backend** queries Atlassian Confluence Cloud spaces via CQL
 search. Each configured space key becomes a `vector_store_id` (lowercased).
-Requires an [API token](https://id.atlassian.com/manage-profile/security/api-tokens):
+
+**OAuth** (default): set `CONFLUENCETOKEN` to an
+[OAuth 2.0 (3LO) user access token](https://developer.atlassian.com/cloud/confluence/oauth-2-3lo-apps/)
+for your Confluence app (scopes such as `read:confluence-content.all`,
+`search:confluence`). `CONFLUENCEEMAIL` is not used. If
+`/rest/api/user/current` returns `"type":"anonymous"`, the token is not a
+valid user access token for the site.
+
+**Classic auth** (`CONFLUENCEAUTH=basic`): email plus
+[API token](https://id.atlassian.com/manage-profile/security/api-tokens).
 
 ```bash
-# With CONFLUENCEURL, CONFLUENCEEMAIL, CONFLUENCETOKEN, CONFLUENCESPACE exported:
 RAG_MCP_BACKEND=confluence rag-mcp-server
 ```
 

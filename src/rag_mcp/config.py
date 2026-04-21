@@ -15,7 +15,8 @@ class ServerConfig(BaseSettings):
     (e.g. RAG_MCP_TRANSPORT=stdio) or via CLI flags (e.g. --transport stdio).
 
     Confluence settings also accept unprefixed names (no underscores):
-    CONFLUENCEURL, CONFLUENCEEMAIL, CONFLUENCETOKEN, CONFLUENCESPACE.
+    CONFLUENCEURL, CONFLUENCEEMAIL, CONFLUENCETOKEN, CONFLUENCEAUTH,
+    CONFLUENCESPACE.
     When both are set, the short name wins.
     """
 
@@ -48,6 +49,13 @@ class ServerConfig(BaseSettings):
         validation_alias=AliasChoices(
             "CONFLUENCETOKEN",
             "RAG_MCP_CONFLUENCE_TOKEN",
+        ),
+    )
+    confluence_auth: Literal["basic", "oauth"] = Field(
+        default="oauth",
+        validation_alias=AliasChoices(
+            "CONFLUENCEAUTH",
+            "RAG_MCP_CONFLUENCE_AUTH",
         ),
     )
     confluence_space: str = Field(

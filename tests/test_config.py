@@ -18,6 +18,7 @@ class TestServerConfig(unittest.TestCase):
         self.assertEqual("./knowledge", cfg.knowledge_dir)
         self.assertEqual("http://localhost:8983", cfg.solr_url)
         self.assertEqual(30000, cfg.max_response_chars)
+        self.assertEqual("oauth", cfg.confluence_auth)
 
     def test_backend_literal_accepts_mock(self):
         cfg = ServerConfig(backend="mock")
@@ -45,6 +46,17 @@ class TestServerConfig(unittest.TestCase):
         self.assertEqual("tok", cfg.confluence_token)
         self.assertEqual("S1,S2", cfg.confluence_space)
 
+    def test_confluence_auth_oauth_env(self):
+        env = {
+            "CONFLUENCEURL": "https://x.atlassian.net",
+            "CONFLUENCETOKEN": "tok",
+            "CONFLUENCESPACE": "S",
+            "CONFLUENCEAUTH": "oauth",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual("oauth", cfg.confluence_auth)
+
 
 class TestBackendFactory(unittest.TestCase):
 
@@ -69,6 +81,39 @@ class TestBackendFactory(unittest.TestCase):
         object.__setattr__(cfg, "max_response_chars", 30000)
         with self.assertRaises(ValueError):
             get_backend(cfg)
+
+    def test_confluence_oauth_ok_without_email(self):
+        from rag_mcp.backends import get_backend
+
+        env = {
+            "RAG_MCP_BACKEND": "confluence",
+            "CONFLUENCEURL": "https://x.atlassian.net/wiki",
+            "CONFLUENCEEMAIL": "",
+            "CONFLUENCETOKEN": "oauth-token",
+            "CONFLUENCEAUTH": "oauth",
+            "CONFLUENCESPACE": "S",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+            backend = get_backend(cfg)
+        self.assertIsNotNone(backend)
+
+    def test_confluence_basic_requires_email(self):
+        from rag_mcp.backends import get_backend
+
+        env = {
+            "RAG_MCP_BACKEND": "confluence",
+            "CONFLUENCEURL": "https://x.atlassian.net/wiki",
+            "CONFLUENCEEMAIL": "",
+            "CONFLUENCETOKEN": "tok",
+            "CONFLUENCEAUTH": "basic",
+            "CONFLUENCESPACE": "S",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+            with self.assertRaises(ValueError) as ctx:
+                get_backend(cfg)
+        self.assertIn("CONFLUENCEEMAIL", str(ctx.exception))
 
 
 if __name__ == "__main__":

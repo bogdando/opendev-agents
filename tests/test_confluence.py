@@ -47,6 +47,36 @@ class TestWikiBaseUrl(unittest.TestCase):
         self.assertEqual("https://example.atlassian.net/wiki", b._base_url)
 
 
+class TestConfluenceOAuth(unittest.TestCase):
+
+    def test_oauth_sends_bearer_and_accept_json(self):
+        b = ConfluenceBackend(
+            base_url="https://example.atlassian.net",
+            email="",
+            token="oauth-access-token",
+            spaces=["S"],
+            max_response_chars=1000,
+            auth_mode="oauth",
+        )
+        self.assertEqual(
+            "Bearer oauth-access-token",
+            b._client.headers.get("Authorization"),
+        )
+        self.assertEqual("application/json", b._client.headers.get("Accept"))
+
+    def test_basic_does_not_set_bearer_header(self):
+        b = ConfluenceBackend(
+            base_url="https://example.atlassian.net",
+            email="u@e.com",
+            token="classic-token",
+            spaces=["S"],
+            max_response_chars=1000,
+            auth_mode="basic",
+        )
+        self.assertIsNone(b._client.headers.get("Authorization"))
+        self.assertIsNotNone(b._client.auth)
+
+
 class TestHtmlToText(unittest.TestCase):
 
     def test_strips_tags(self):

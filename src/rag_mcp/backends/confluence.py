@@ -3,7 +3,8 @@
 Each configured space becomes a ``vector_store_id``.  Multiple spaces
 can be served by comma-separating them in ``CONFLUENCESPACE``.
 
-Requires Confluence Cloud (Atlassian) with an API token.
+Supports Confluence Cloud with either **HTTP Basic** (email + API token) or
+**OAuth 2.0** (Bearer access token from Atlassian 3LO / scoped token).
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ from __future__ import annotations
 import html
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
@@ -109,15 +110,31 @@ class ConfluenceBackend:
         token: str,
         spaces: list[str],
         max_response_chars: int,
+        auth_mode: Literal["basic", "oauth"] = "oauth",
     ) -> None:
         self._base_url = _wiki_base_url(base_url)
         self._spaces = spaces
         self._max_chars = max_response_chars
-        self._client = httpx.AsyncClient(
-            timeout=30.0,
-            auth=(email, token),
-        )
-        logger.debug("Confluence backend wiki base URL: %s", self._base_url)
+        self._auth_mode = auth_mode
+        if auth_mode == "oauth":
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                },
+            )
+            logger.debug(
+                "Confluence backend OAuth Bearer auth, wiki base URL: %s",
+                self._base_url,
+            )
+        else:
+            self._client = httpx.AsyncClient(
+                timeout=30.0,
+                auth=(email, token),
+                headers={"Accept": "application/json"},
+            )
+            logger.debug("Confluence backend Basic auth, wiki base URL: %s", self._base_url)
 
     async def _cql_search(
         self, cql: str, limit: int

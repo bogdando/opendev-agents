@@ -49,15 +49,20 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
             raise ValueError(
                 "CONFLUENCEURL is required for the confluence backend"
             )
-        if not config.confluence_email or not config.confluence_token:
+        if not config.confluence_token:
             raise ValueError(
-                "CONFLUENCEEMAIL and CONFLUENCETOKEN are required for "
-                "the confluence backend"
+                "CONFLUENCETOKEN is required for the confluence backend"
             )
+        if config.confluence_auth == "basic":
+            if not config.confluence_email:
+                raise ValueError(
+                    "CONFLUENCEEMAIL is required when CONFLUENCEAUTH=basic"
+                )
         return ConfluenceBackend(
             base_url=config.confluence_url,
             email=config.confluence_email,
             token=config.confluence_token,
+            auth_mode=config.confluence_auth,
             spaces=spaces,
             max_response_chars=config.max_response_chars,
         )

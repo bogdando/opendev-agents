@@ -150,10 +150,10 @@ Two MCP server entries are preconfigured in `.cursor/mcp.json`:
 Set required env vars:
 
 ```bash
-export CONFLUENCE_URL="https://yourorg.atlassian.net/wiki"
-export CONFLUENCE_EMAIL="you@example.com"
-export CONFLUENCE_TOKEN="your-api-token"
-export CONFLUENCE_SPACE="MYPROJECT"
+export CONFLUENCEURL="https://yourorg.atlassian.net/wiki"
+export CONFLUENCEEMAIL="you@example.com"
+export CONFLUENCETOKEN="your-api-token"
+export CONFLUENCESPACE="MYPROJECT"
 ```
 
 Both use the same `rag-mcp-server` binary.  The `@mcp-rag` skill

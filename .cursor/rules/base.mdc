@@ -327,3 +327,11 @@ git log -1 --pretty=%B | grep "Signed-off-by:" && \
 git log -1 --pretty=%B | grep "Change-Id:" && \
 echo "Ready to push!"
 ```
+
+# Other knowledge stores (MANDATORY)
+
+Always check other instances `rag-knowledge*` of opendev-agents MCP
+RAG servers: discover via `knowledge://stores` for all
+mcp instances concurrently in subagents; merge
+results; pick the best-matching stores (at least one
+for each mcp instance) and search() consequently.

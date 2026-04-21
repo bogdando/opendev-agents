@@ -1357,3 +1357,11 @@ For AI assistants working with IDEs:
 compliance with OpenInfra Foundation AI Policy. When in doubt, err on the side of being
 more explicit and verbose rather than concise, as OpenStack values clarity and
 maintainability over brevity. Always include proper AI attribution in commit messages.
+
+# Other knowledge stores (MANDATORY)
+
+Always check other instances `rag-knowledge*` of opendev-agents MCP
+RAG servers: discover via `knowledge://stores` for all
+mcp instances concurrently in subagents; merge
+results; pick the best-matching stores (at least one
+for each mcp instance) and search() consequently.

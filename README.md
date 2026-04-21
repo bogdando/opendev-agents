@@ -171,6 +171,7 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`; omit for OAuth) |
 | `RAG_MCP_CONFLUENCE_TOKEN` | | Classic API token **or** OAuth 2.0 access token (or `CONFLUENCETOKEN`) |
 | `RAG_MCP_CONFLUENCE_AUTH` | `oauth` | `oauth` (Bearer access token) or `basic` (email + classic API token); or `CONFLUENCEAUTH` |
+| `RAG_MCP_CONFLUENCE_CLOUD_ID` | | Atlassian **cloud ID** for OAuth (or `CONFLUENCECLOUDID`); optional if discoverable |
 | `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `openstackk8s,RHOSO` (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
@@ -195,15 +196,15 @@ RAG_MCP_BACKEND=solr RAG_MCP_SOLR_URL=http://solr.example.com:8983 rag-mcp-serve
 **Confluence backend** queries Atlassian Confluence Cloud spaces via CQL
 search. Each configured space key becomes a `vector_store_id` (lowercased).
 
-**OAuth** (default): set `CONFLUENCETOKEN` to an
-[OAuth 2.0 (3LO) user access token](https://developer.atlassian.com/cloud/confluence/oauth-2-3lo-apps/)
-for your Confluence app (scopes such as `read:confluence-content.all`,
-`search:confluence`). `CONFLUENCEEMAIL` is not used. If
-`/rest/api/user/current` returns `"type":"anonymous"`, the token is not a
-valid user access token for the site.
+**OAuth** (default): use an [OAuth 2.0 (3LO) user access
+token](https://developer.atlassian.com/cloud/confluence/oauth-2-3lo-apps/)
+(`CONFLUENCETOKEN`). Calls Atlassian’s gateway
+``https://api.atlassian.com/ex/confluence/{cloudId}/rest/api/...``.
+The backend sets ``cloudId`` from ``CONFLUENCECLOUDID`` or by matching
+``CONFLUENCEURL`` against
+[accessible-resources](https://developer.atlassian.com/cloud/oauth/getting-started/making-calls-to-api/).
 
-**Classic auth** (`CONFLUENCEAUTH=basic`): email plus
-[API token](https://id.atlassian.com/manage-profile/security/api-tokens).
+**Classic auth** (`CONFLUENCEAUTH=basic`): email plus API token.
 
 ```bash
 RAG_MCP_BACKEND=confluence rag-mcp-server

@@ -16,7 +16,7 @@ class ServerConfig(BaseSettings):
 
     Confluence settings also accept unprefixed names (no underscores):
     CONFLUENCEURL, CONFLUENCEEMAIL, CONFLUENCETOKEN, CONFLUENCEAUTH,
-    CONFLUENCESPACE.
+    CONFLUENCECLOUDID, CONFLUENCESPACE.
     When both are set, the short name wins.
     """
 
@@ -56,6 +56,13 @@ class ServerConfig(BaseSettings):
         validation_alias=AliasChoices(
             "CONFLUENCEAUTH",
             "RAG_MCP_CONFLUENCE_AUTH",
+        ),
+    )
+    confluence_cloud_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "CONFLUENCECLOUDID",
+            "RAG_MCP_CONFLUENCE_CLOUD_ID",
         ),
     )
     confluence_space: str = Field(

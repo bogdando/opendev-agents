@@ -4,15 +4,20 @@ Each configured space becomes a ``vector_store_id``.  Multiple spaces
 can be served by comma-separating them in ``CONFLUENCESPACE``.
 
 Supports Confluence Cloud with either **HTTP Basic** (email + API token) or
-**OAuth 2.0** (Bearer access token from Atlassian 3LO / scoped token).
+**OAuth 2.0** (Bearer access token from Atlassian 3LO). OAuth calls **must**
+use ``https://api.atlassian.com/ex/confluence/{cloudId}/rest/api/...`` per
+Atlassian; the backend resolves ``cloudId`` from ``CONFLUENCECLOUDID`` or
+from ``GET /oauth/token/accessible-resources`` matching ``CONFLUENCEURL``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import httpx
 
@@ -36,6 +41,17 @@ def _wiki_base_url(url: str) -> str:
     if u.endswith("/wiki"):
         return u
     return f"{u}/wiki"
+
+
+def _site_origin(url: str) -> str:
+    """``https://tenant.atlassian.net`` from ``CONFLUENCEURL`` (strip ``/wiki``)."""
+    u = url.strip()
+    if "://" not in u:
+        u = f"https://{u}"
+    p = urlparse(u)
+    netloc = p.netloc or p.path.split("/")[0]
+    scheme = p.scheme or "https"
+    return f"{scheme}://{netloc}"
 
 
 def _html_to_text(raw: str) -> str:
@@ -111,11 +127,17 @@ class ConfluenceBackend:
         spaces: list[str],
         max_response_chars: int,
         auth_mode: Literal["basic", "oauth"] = "oauth",
+        cloud_id: str = "",
     ) -> None:
-        self._base_url = _wiki_base_url(base_url)
+        # Public wiki URL for human-facing page links (always tenant host).
+        self._public_wiki_base = _wiki_base_url(base_url)
+        self._site_origin = _site_origin(base_url)
         self._spaces = spaces
         self._max_chars = max_response_chars
         self._auth_mode = auth_mode
+        self._explicit_cloud_id = cloud_id.strip()
+        self._oauth_api_base: str | None = None
+        self._oauth_lock = asyncio.Lock()
         if auth_mode == "oauth":
             self._client = httpx.AsyncClient(
                 timeout=30.0,
@@ -125,8 +147,8 @@ class ConfluenceBackend:
                 },
             )
             logger.debug(
-                "Confluence backend OAuth Bearer auth, wiki base URL: %s",
-                self._base_url,
+                "Confluence OAuth (Bearer); public wiki base for links: %s",
+                self._public_wiki_base,
             )
         else:
             self._client = httpx.AsyncClient(
@@ -134,13 +156,83 @@ class ConfluenceBackend:
                 auth=(email, token),
                 headers={"Accept": "application/json"},
             )
-            logger.debug("Confluence backend Basic auth, wiki base URL: %s", self._base_url)
+            logger.debug("Confluence Basic auth, API base: %s", self._public_wiki_base)
+
+    async def _ensure_oauth_api_base(self) -> str:
+        """REST API prefix: site ``.../wiki`` (basic) or Atlassian gateway (oauth)."""
+        if self._auth_mode != "oauth":
+            return self._public_wiki_base
+        if self._oauth_api_base is not None:
+            return self._oauth_api_base
+        async with self._oauth_lock:
+            if self._oauth_api_base is not None:
+                return self._oauth_api_base
+            if self._explicit_cloud_id:
+                self._oauth_api_base = (
+                    "https://api.atlassian.com/ex/confluence/"
+                    f"{self._explicit_cloud_id}"
+                )
+                cid = self._explicit_cloud_id
+                tail = cid[-12:] if len(cid) > 12 else cid
+                logger.info(
+                    "Confluence OAuth API base from CONFLUENCECLOUDID (…%s)",
+                    tail,
+                )
+            else:
+                self._oauth_api_base = await self._discover_oauth_api_base()
+            logger.debug("Confluence OAuth REST prefix: %s", self._oauth_api_base)
+            return self._oauth_api_base
+
+    async def _discover_oauth_api_base(self) -> str:
+        """Resolve cloud ID via accessible-resources (OAuth must use api.atlassian.com)."""
+        url = "https://api.atlassian.com/oauth/token/accessible-resources"
+        resp = await self._client.get(url)
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            body = (e.response.text or "")[:_HTTP_ERR_BODY_MAX]
+            logger.warning(
+                "Confluence OAuth accessible-resources HTTP %s: %s",
+                e.response.status_code,
+                body,
+            )
+            raise ValueError(
+                "OAuth token rejected by accessible-resources "
+                f"(HTTP {e.response.status_code}). "
+                "Use a valid 3LO access token or set CONFLUENCECLOUDID."
+            ) from e
+        resources: list[dict[str, Any]] = resp.json()
+        want = self._site_origin.rstrip("/")
+        for item in resources:
+            item_url = (item.get("url") or "").rstrip("/")
+            if item_url == want:
+                cid = item["id"]
+                logger.info(
+                    "Confluence OAuth matched site %s to cloud ID ...%s",
+                    want,
+                    str(cid)[-8:],
+                )
+                return f"https://api.atlassian.com/ex/confluence/{cid}"
+        for item in resources:
+            scopes = item.get("scopes") or []
+            if any("confluence" in str(s).lower() for s in scopes):
+                cid = item["id"]
+                logger.warning(
+                    "Confluence OAuth using first Confluence-scoped site: %s",
+                    item.get("url"),
+                )
+                return f"https://api.atlassian.com/ex/confluence/{cid}"
+        raise ValueError(
+            "No Confluence site in accessible-resources for this token "
+            f"(expected URL {want}). Set CONFLUENCECLOUDID explicitly."
+        )
 
     async def _cql_search(
         self, cql: str, limit: int
     ) -> list[dict[str, Any]]:
         """Execute a CQL query and return the result array."""
-        url = f"{self._base_url}/rest/api/content/search"
+        api_base = await self._ensure_oauth_api_base()
+        url = f"{api_base}/rest/api/content/search"
         params = {
             "cql": cql,
             "limit": str(limit),
@@ -168,7 +260,8 @@ class ConfluenceBackend:
         return results
 
     async def _get_space_info(self, space_key: str) -> dict[str, Any]:
-        url = f"{self._base_url}/rest/api/space/{space_key}"
+        api_base = await self._ensure_oauth_api_base()
+        url = f"{api_base}/rest/api/space/{space_key}"
         resp = await self._client.get(url)
         if resp.status_code == 200:
             return resp.json()
@@ -248,9 +341,15 @@ class ConfluenceBackend:
             else:
                 budget -= len(text)
 
-            page_url = self._base_url + page.get("_links", {}).get(
-                "webui", f"/wiki/spaces/{space_key}"
+            webui = page.get("_links", {}).get(
+                "webui", f"/spaces/{space_key}"
             )
+            if webui.startswith("http"):
+                page_url = webui
+            else:
+                page_url = self._public_wiki_base.rstrip("/") + (
+                    webui if webui.startswith("/") else f"/{webui}"
+                )
             space_info = page.get("space", {})
             results.append(
                 {

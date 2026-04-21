@@ -9,6 +9,7 @@ from unittest import mock
 from rag_mcp.backends.confluence import (
     ConfluenceBackend,
     _html_to_text,
+    _site_origin,
     _wiki_base_url,
     _wiki_phrase_fallback_cql,
     _wiki_query_tokens,
@@ -43,8 +44,24 @@ class TestWikiBaseUrl(unittest.TestCase):
             token="t",
             spaces=["S"],
             max_response_chars=1000,
+            auth_mode="basic",
         )
-        self.assertEqual("https://example.atlassian.net/wiki", b._base_url)
+        self.assertEqual("https://example.atlassian.net/wiki", b._public_wiki_base)
+
+
+class TestSiteOrigin(unittest.TestCase):
+
+    def test_strips_wiki_path(self):
+        self.assertEqual(
+            "https://example.atlassian.net",
+            _site_origin("https://example.atlassian.net/wiki"),
+        )
+
+    def test_site_root(self):
+        self.assertEqual(
+            "https://example.atlassian.net",
+            _site_origin("https://example.atlassian.net"),
+        )
 
 
 class TestConfluenceOAuth(unittest.TestCase):
@@ -57,6 +74,7 @@ class TestConfluenceOAuth(unittest.TestCase):
             spaces=["S"],
             max_response_chars=1000,
             auth_mode="oauth",
+            cloud_id="cid-1111-2222",
         )
         self.assertEqual(
             "Bearer oauth-access-token",
@@ -75,6 +93,60 @@ class TestConfluenceOAuth(unittest.TestCase):
         )
         self.assertIsNone(b._client.headers.get("Authorization"))
         self.assertIsNotNone(b._client.auth)
+
+    def test_oauth_gateway_from_cloud_id(self):
+        b = ConfluenceBackend(
+            base_url="https://example.atlassian.net/wiki",
+            email="",
+            token="t",
+            spaces=["S"],
+            max_response_chars=1000,
+            auth_mode="oauth",
+            cloud_id="aaa-bbbb-cccc-dddd",
+        )
+        out = asyncio.run(b._ensure_oauth_api_base())
+        self.assertEqual(
+            "https://api.atlassian.com/ex/confluence/aaa-bbbb-cccc-dddd",
+            out,
+        )
+
+    def test_oauth_discover_gateway_from_accessible_resources(self):
+        b = ConfluenceBackend(
+            base_url="https://example.atlassian.net",
+            email="",
+            token="t",
+            spaces=["S"],
+            max_response_chars=1000,
+            auth_mode="oauth",
+            cloud_id="",
+        )
+        ar = mock.MagicMock()
+        ar.status_code = 200
+        ar.raise_for_status = mock.MagicMock()
+        ar.json.return_value = [
+            {
+                "id": "discovered-cloud-id",
+                "url": "https://example.atlassian.net",
+                "scopes": ["read:confluence-content.all"],
+            },
+        ]
+
+        async def _run():
+            with mock.patch.object(b._client, "get", new_callable=mock.AsyncMock) as m:
+                m.return_value = ar
+                out = await b._ensure_oauth_api_base()
+            self.assertEqual(
+                "https://api.atlassian.com/ex/confluence/discovered-cloud-id",
+                out,
+            )
+            m.assert_called()
+            call_urls = [c.args[0] for c in m.call_args_list]
+            self.assertIn(
+                "https://api.atlassian.com/oauth/token/accessible-resources",
+                call_urls,
+            )
+
+        asyncio.run(_run())
 
 
 class TestHtmlToText(unittest.TestCase):
@@ -103,6 +175,7 @@ def _make_backend(spaces: list[str] | None = None) -> ConfluenceBackend:
         token="fake-token",
         spaces=spaces or ["MYSPACE"],
         max_response_chars=30000,
+        auth_mode="basic",
     )
 
 
@@ -196,6 +269,7 @@ class TestConfluenceSearch(unittest.TestCase):
             token="t",
             spaces=["S"],
             max_response_chars=20,
+            auth_mode="basic",
         )
         pages = [
             _confluence_page(title="P1", body="<p>" + "x" * 50 + "</p>"),

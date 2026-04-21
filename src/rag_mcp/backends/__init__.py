@@ -63,6 +63,7 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
             email=config.confluence_email,
             token=config.confluence_token,
             auth_mode=config.confluence_auth,
+            cloud_id=config.confluence_cloud_id,
             spaces=spaces,
             max_response_chars=config.max_response_chars,
         )

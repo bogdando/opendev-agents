@@ -57,6 +57,14 @@ class TestServerConfig(unittest.TestCase):
             cfg = ServerConfig()
         self.assertEqual("oauth", cfg.confluence_auth)
 
+    def test_confluence_cloud_id_env(self):
+        env = {
+            "CONFLUENCECLOUDID": "aaa-bbbb-cccc-dddd",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual("aaa-bbbb-cccc-dddd", cfg.confluence_cloud_id)
+
 
 class TestBackendFactory(unittest.TestCase):
 

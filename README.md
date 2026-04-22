@@ -130,7 +130,9 @@ export JIRASPACE="https://yourorg.atlassian.net"
 export JIRAEMAIL="you@example.com"
 ```
 
-Note that you may need to inline them in mcp.json instead.
+> **NOTE**: Make sure that all exported env vars are interpolated in the copies
+> of `mcp.json` template in this repo before letting the agents to load it.
+> Use envsubst, or the like tools in your installers logic (or inline directly).
 
 RAG MCP Server
 ==============
@@ -148,17 +150,7 @@ Example configs for MCP servers are provided in `.cursor/mcp.json`:
 
 - **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files
 - **`rag-knowledge-wiki`** — confluence backend, searches Atlassian Confluence spaces
-- **`rag-knowledge-okp`** — Solr/OKP backend, searches Red Hat Customer Portal knowledgebase (solutions, articles, CVEs, errata, docs). Requires a local OKP Solr container running.
-
-Set required env vars:
-
-```bash
-export CONFLUENCEURL="https://yourorg.atlassian.net/wiki"
-export CONFLUENCEEMAIL="you@example.com"
-export CONFLUENCETOKEN="your-api-token"
-export CONFLUENCESPACE="MYPROJECT"
-```
-Note that you may need to inline them in mcp.json instead.
+- **`rag-knowledge-okp`** — Solr/OKP backend, searches Red Hat Customer Portal knowledgebase (solutions, articles, CVEs, errata, docs). Requires a local or hosted elsewhere OKP (Offline Knowledge Portal) Solr instance.
 
 All servers use the same `rag-mcp-server` binary.  The `@mcp-rag` skill
 documents CLI interaction via `curl`.
@@ -181,7 +173,7 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_LOG_LEVEL` | `INFO` | Set to `DEBUG` to log Confluence CQL and result counts |
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
-subdirectory name becomes a `vector_store_id`. Add `.md` files to populate stores.
+subdirectory name becomes a `vector_store_id`. Works with `.adoc`, `.md`, `.rst`, `.txt`.
 Use an absolute path for `RAG_MCP_KNOWLEDGE_DIR` so the server works regardless
 of which workspace is open.
 
@@ -191,25 +183,31 @@ queries the `portal` core using okp-mcp's Solr client and formatting modules
 Solr instance with the OKP schema. Returns formatted markdown with
 highlights, annotations, and source URLs:
 
+Set required env vars:
+
 ```bash
-RAG_MCP_BACKEND=solr RAG_MCP_SOLR_URL=http://solr.example.com:8983 rag-mcp-server
+export OKPSOLRURL="http://127.0.0.1:8080"
+export OKPSSLCERTFILE=""  # path to CA cert if using HTTPS endpoint
+export OKPNOPROXY="127.0.0.1,localhost,::1"
 ```
+
+This example requires a local instance of OKP up and running. You can use an externally
+hosted one as well.
 
 **Confluence backend** queries Atlassian Confluence Cloud spaces via CQL
 search. Each configured space key becomes a `vector_store_id` (lowercased).
 Requires an [API token](https://id.atlassian.com/manage-profile/security/api-tokens):
 
+Set required env vars:
+
 ```bash
-# With CONFLUENCEURL, CONFLUENCEEMAIL, CONFLUENCETOKEN, CONFLUENCESPACE exported:
-RAG_MCP_BACKEND=confluence rag-mcp-server
+export CONFLUENCEURL="https://yourorg.atlassian.net/wiki"
+export CONFLUENCEEMAIL="you@example.com"
+export CONFLUENCETOKEN="your-api-token"
+export CONFLUENCESPACE="MYPROJECT"
 ```
 
 Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE_SPACE`).
-
-**OKP/Solr backend** queries a Solr instance with the OKP schema.
-Set `RAG_MCP_SOLR_URL` in `mcp.json` to point at your Solr endpoint.
-Inside the OKP container, Solr binds to loopback only — use the httpd
-proxy port (8080) instead of the Solr port (8983).
 
 For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
 with it via `curl`:
@@ -239,9 +237,9 @@ server when done.
 
 ### External knowledge stores
 
-The mock backend can serve any local markdown repository as a knowledge
-store. See [docs/external-agentic-workflows.md](./docs/external-agentic-workflows.md)
-for a step-by-step guide using
+The mock backend can serve any local markdown, ascidoc, Sphinx RST or plain txt files
+repository as a knowledge store.
+See [docs/external-agentic-workflows.md](./docs/external-agentic-workflows.md)
+for am example step-by-step guide using
 [openstack-agentic-workflows](https://github.com/sbauza/openstack-agentic-workflows)
-as a `nova-dev` store - including store setup via symlinks, CLI
-verification, IDE configuration, and the `rag-nova-dev.mdc` advisory rule.
+connected as a local `nova-dev` store.

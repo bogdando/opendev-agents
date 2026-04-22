@@ -30,7 +30,10 @@
       "command": "rag-mcp-server",
       "env": {
         "RAG_MCP_BACKEND": "solr",
-        "RAG_MCP_SOLR_URL": "http://localhost:8080"
+        "RAG_MCP_SOLR_URL": "${OKPSOLRURL}",
+        "SSL_CERT_FILE": "${OKPSSLCERTFILE}",
+        "NO_PROXY": "${OKPNOPROXY}",
+        "no_proxy": "${OKPNOPROXY}"
       }
     }
   }

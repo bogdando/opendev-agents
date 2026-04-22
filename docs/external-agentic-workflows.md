@@ -319,3 +319,16 @@ discovery: the agent must read `knowledge://stores` and pick a store
 before calling `search`. Store-specific advisory rules like
 `rag-nova-dev.mdc` (globs: []) provide a shortcut — when loaded,
 the agent already knows the store ID and can skip discovery.
+
+The advisory rules should also instruct AI agents to always check other instances
+of opendev-agents MCP RAG server, for example:
+
+```
+# Other knowledge stores (MANDATORY)
+
+Always check other instances `rag-knowledge*` of opendev-agents MCP
+RAG servers: discover via `knowledge://stores` for all
+mcp instances concurrently in subagents; merge
+results; pick the best-matching stores (at least one
+for each mcp instance) and search() consequently.
+```

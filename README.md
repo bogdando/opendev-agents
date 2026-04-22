@@ -112,28 +112,6 @@ the `rag-knowledge` MCP server to discover available stores, then use the
 `search` tool with the appropriate `vector_store_id`.
 ```
 
-Jira MCP server
-===============
-
-Requires `uv` (provides `uvx`). Install via
-[astral.sh](https://docs.astral.sh/uv/getting-started/installation/) or:
-
-```bash
-pip install --user uv
-```
-
-Set required env vars:
-
-```bash
-export JIRATOKEN="your-jira-api-token"
-export JIRASPACE="https://yourorg.atlassian.net"
-export JIRAEMAIL="you@example.com"
-```
-
-> **NOTE**: Make sure that all exported env vars are interpolated in the copies
-> of `mcp.json` template in this repo before letting the agents to load it.
-> Use envsubst, or the like tools in your installers logic (or inline directly).
-
 RAG MCP Server
 ==============
 
@@ -154,6 +132,10 @@ Example configs for MCP servers are provided in `.cursor/mcp.json`:
 
 All servers use the same `rag-mcp-server` binary.  The `@mcp-rag` skill
 documents CLI interaction via `curl`.
+
+> **NOTE**: Make sure that all exported env vars are interpolated in the copies
+> of `mcp.json` template in this repo before letting the agents to load it.
+> Use envsubst, or the like tools in your installers logic (or inline directly).
 
 Configuration via environment variables (prefix `RAG_MCP_`):
 
@@ -208,6 +190,10 @@ export CONFLUENCESPACE="MYPROJECT"
 ```
 
 Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE_SPACE`).
+
+> **NOTE**: Make sure that all exported env vars are interpolated in the copies
+> of `mcp.json` template in this repo before letting the agents to load it.
+> Use envsubst, or the like tools in your installers logic (or inline directly).
 
 For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
 with it via `curl`:

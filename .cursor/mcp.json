@@ -1,14 +1,5 @@
 {
   "mcpServers": {
-    "jira": {
-      "command": "uvx",
-      "args": ["mcp-atlassian"],
-      "env": {
-        "JIRA_API_TOKEN": "${JIRATOKEN}",
-        "JIRA_URL": "${JIRASPACE}",
-        "JIRA_EMAIL": "${JIRAEMAIL}"
-      }
-    },
     "rag-knowledge": {
       "command": "rag-mcp-server",
       "env": {

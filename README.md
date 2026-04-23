@@ -7,56 +7,28 @@ and skills:
 
 ...and also goes [slightly beyond](./HUMANS.md) that by making an attempt of defining
 [agent-agnostic](docs/agent-agnostic-approach.md) frameworks for integration of local
-rules with external systems, with the main purpose of deduplicating rules and separating
-"upstream" guide lines from "downstream" implementation. See also
-[search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
-knowledge retrieval approaches, and
-[long-running subagents](docs/long-running-subagents.md) for how deep agents
+rules with external knowledge systems, with the main purpose of deduplicating rules,
+reducing the tokens burn-rates in each prompt, separating "upstream" guide lines from "downstream" specifics, giving subagent personas a better SME contexr, and the like.
+
+In [config-install](docs/config-install.md) see an example approach for declarative
+configuration and delivery into worspace targets (projects repositories) of locally
+provided and external knowledge stores, skills, rules, and more to that.
+
+See also my further ideas for brain storming topics for:
+* [search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
+knowledge retrieval approaches;
+* [long-running subagents](docs/long-running-subagents.md) for how deep agents
 maintain instructional consistency over extended sessions.
 
-Applying for misc shell agents
-==============================
+Applying for Cursor agent/IDE etc
+=================================
 
-Globally (incuding claude code and cursor-agent tools):
-```bash
-mkdir -p ~/.claude
-mkdir -p ~/.cursor
-mkdir -p /opt/go/src/github.com/bogdando
-cd /opt/go/src/github.com/bogdando
-git clone https://github.com/bogdando/opendev-agents
-cd opendev-agents
+This repo ships decomposed `.cursor/rules/*.mdc` files from a snapshot of the given
+above sources that works only in Cursor. For Claude Code and other agentic tools, there is
+a "monolithic" baseline [CLAUDE.md](./CLAUDE.md) as well.
 
-cp CLAUDE.md ~/.claude/CLAUDE.md
-ln -sf ~/.claude/CLAUDE.md ~/.cursor/AGENTS.md
-
-cp -ar skills ~/.claude
-ln -sf ~/.claude/skills ~/.cursor
-
-cp .cursor/mcp.json ~/.claude
-ln -sf ~/.claude/mcp.json ~/.cursor
-```
-For a local project space, use its root dir instead.
-
-Applying for Cursor IDE
-=======================
-
-This repo ships decomposed `.cursor/rules/*.mdc` files that activate based on
-which files you are editing (glob patterns derived from Nova and Cyborg directories
-layout). Copy or symlink the whole directory into each workspace root:
-
-```bash
-for dir in /opt/Projects/Openstack/gitrepos/*/; do
-  # rm -f "$dir/AGENTS.md" , if applicable
-  ln -sfn "$(pwd)/.cursor" "$dir/.cursor"
-done
-```
-
-For a system-wide baseline that applies to every workspace regardless of
-project, copy and paste the contents of `base.mdc` into `Rules` of
-`Rules, Skills, Subagents` in Cursor settings.
-
-For Claude Code, add the `mcpServers` of `mcp.json` to
-`~/.claude/settings.json` or `.claude/settings.json`.
+There are other a tool-specific ways to split the monolithic ruleset into smaller chunks.
+The only requirement is - those tools must support the "AGENTS MD" framework.
 
 ### Glob-to-Subsystem Mapping
 
@@ -115,27 +87,31 @@ the `rag-knowledge` MCP server to discover available stores, then use the
 RAG MCP Server
 ==============
 
-A thin MCP server that exposes knowledge stores as searchable tools and
-URI-addressable resources. The agent gets formatted markdown injected
-directly into its context window. See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md).
+The rules system to use with your personal army of agents is just a flavor to prefer, or not.
+While the main purpose of this repository is to demonstrate a thin MCP server
+(requires no LLM nor embedding models) that exposes knowledge stores as searchable MCP resources
+in agents, subagents, and humans prompts by augmenting it (RAG) with the searched context.
 
-Install:
-```bash
-pip install -e .
-```
+The prompting actor, whomever or whatever it is, gets formatted markdown injected directly into the context window while executing their workflows, following rules, or "wearing hats" of experts in other knowledge domains, or acting as other projects' personas. See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md) for its design details.
+
+To let the agents natively running that MCP server instances, provide required configuration
+for each particular backend.
+
+For Cursor, adjust [mcp.json](.cursor/mcp.json) for your case.
+For Claude Code, add the `mcpServers` of `mcp.json` to
+`~/.claude/settings.json` or `.claude/settings.json` in a workspace target project repo, or use CLI commands as well.
+
+> **NOTE**: Make sure that all exported env vars are interpolated in the
+> of `mcp.json` template in this repo before letting the agents to load it.
+> Use envsubst, or the like tools in your installers logic (or inline directly).
 
 Example configs for MCP servers are provided in `.cursor/mcp.json`:
 
-- **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files
-- **`rag-knowledge-wiki`** — confluence backend, searches Atlassian Confluence spaces
-- **`rag-knowledge-okp`** — Solr/OKP backend, searches Red Hat Customer Portal knowledgebase (solutions, articles, CVEs, errata, docs). Requires a local or hosted elsewhere OKP (Offline Knowledge Portal) Solr instance.
+- **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files.
+- **`rag-knowledge-wiki`** — Confluence backend, searches Atlassian Confluence spaces.
+- **`rag-knowledge-okp`** — Solr/OKP backend, keywords-based search in Offline Knowledge Portals (Red Hat Customer Portal knowledgebase may be hosted as OKP providing solutions, articles, CVEs, errata and docs). Requires a local or hosted elsewhere OKP Solr instance.
 
-All servers use the same `rag-mcp-server` binary.  The `@mcp-rag` skill
-documents CLI interaction via `curl`.
-
-> **NOTE**: Make sure that all exported env vars are interpolated in the copies
-> of `mcp.json` template in this repo before letting the agents to load it.
-> Use envsubst, or the like tools in your installers logic (or inline directly).
+All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-rag/SKILL.md) skill helps with low lever debug of backends via `curl` commands mimicing the agent's `search()` calls.
 
 Configuration via environment variables (prefix `RAG_MCP_`):
 

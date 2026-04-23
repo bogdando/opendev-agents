@@ -1,14 +1,14 @@
 This aggregates and merges the AGENTS/CLAUDE sources:
-* https://github.com/stephenfin/openstack-agentsmd/blob/main/AGENTS.md
-* https://github.com/SeanMooney/openstack-ai-style-guide/blob/master/docs/comprehensive-guide.md
+* [stephenfin/openstack-agentsmd](https://github.com/stephenfin/openstack-agentsmd/blob/main/AGENTS.md)
+* [SeanMooney/openstack-ai-style-guide](https://github.com/SeanMooney/openstack-ai-style-guide/blob/master/docs/comprehensive-guide.md)
 
 and skills:
-* https://github.com/gthiemonge/openstack-review-claude-skill
+* [gthiemonge/openstack-review-claude-skill](https://github.com/gthiemonge/openstack-review-claude-skill) (in-tree)
+* A referenced fork of [melwitt/nova-spec-summarizer](https://github.com/melwitt/nova-spec-summarizer)
 
-...and also goes [slightly beyond](./HUMANS.md) that by making an attempt of defining
-[agent-agnostic](docs/agent-agnostic-approach.md) frameworks for integration of local
-rules with external knowledge systems, with the main purpose of deduplicating rules,
-reducing the tokens burn-rates in each prompt, separating "upstream" guide lines from "downstream" specifics, giving subagent personas a better SME contexr, and the like.
+The effort also goes [slightly beyond](./HUMANS.md) that by making an attempt of defining
+[agent-agnostic](docs/agent-agnostic-approach.md) REST-like frameworks, and integrating with external knowledge systems. The purpose of which is de-duplicating rules for projects and libs,
+reducing the tokens burn-rates in each prompt, separating upstream guidelines from downstream specifics, giving subagent personas a better SME context, and the like.
 
 In [config-install](docs/config-install.md) see an example approach for declarative
 configuration and delivery into worspace targets (projects repositories) of locally
@@ -101,10 +101,6 @@ For Cursor, adjust [mcp.json](.cursor/mcp.json) for your case.
 For Claude Code, add the `mcpServers` of `mcp.json` to
 `~/.claude/settings.json` or `.claude/settings.json` in a workspace target project repo, or use CLI commands as well.
 
-> **NOTE**: Make sure that all exported env vars are interpolated in the
-> of `mcp.json` template in this repo before letting the agents to load it.
-> Use envsubst, or the like tools in your installers logic (or inline directly).
-
 Example configs for MCP servers are provided in `.cursor/mcp.json`:
 
 - **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files.
@@ -129,6 +125,8 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
 | `RAG_MCP_LOG_LEVEL` | `INFO` | Set to `DEBUG` to log Confluence CQL and result counts |
+| `SSL_CERT_FILE` | | CA certificate path for HTTPS Solr endpoints |
+| `NO_PROXY` / `no_proxy` | | Proxy bypass list (e.g. `127.0.0.1,localhost,::1` for local OKP) |
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
 subdirectory name becomes a `vector_store_id`. Works with `.adoc`, `.md`, `.rst`, `.txt`.
@@ -167,9 +165,8 @@ export CONFLUENCESPACE="MYPROJECT"
 
 Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE_SPACE`).
 
-> **NOTE**: Make sure that all exported env vars are interpolated in the copies
-> of `mcp.json` template in this repo before letting the agents to load it.
-> Use envsubst, or the like tools in your installers logic (or inline directly).
+> **NOTE**: Make sure that all exported env vars are interpolated in `mcp.json`
+> before letting the agents to load it.
 
 For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
 with it via `curl`:

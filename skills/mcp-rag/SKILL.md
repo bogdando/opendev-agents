@@ -1,3 +1,7 @@
+---
+name: mcp-rag
+---
+
 # RAG MCP Server - CLI Navigation Guide
 
 How to interact with the RAG MCP server via `curl` using the

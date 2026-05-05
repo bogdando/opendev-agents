@@ -23,10 +23,17 @@ logger = logging.getLogger(__name__)
 class SolrBackend:
     """Backend that queries Solr/OKP via okp-mcp's client layer."""
 
-    def __init__(self, solr_url: str, max_response_chars: int) -> None:
+    def __init__(
+        self,
+        solr_url: str,
+        max_response_chars: int,
+        proxy_url: str | None = None,
+    ) -> None:
         self._solr_endpoint = f"{solr_url}/solr/portal/select"
         self._max_response_chars = max_response_chars
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self._client = httpx.AsyncClient(
+            timeout=30.0, proxy=proxy_url
+        )
 
     async def search(
         self, query: str, store_id: str, top_k: int

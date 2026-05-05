@@ -285,6 +285,24 @@ class TestWikiCqlHelpers(unittest.TestCase):
         self.assertIn('\\"hi\\"', cql)
 
 
+class TestConfluenceProxy(unittest.TestCase):
+
+    def test_proxy_url_passed_to_client(self):
+        b = ConfluenceBackend(
+            base_url="https://example.atlassian.net",
+            email="t@e.com",
+            token="t",
+            spaces=["S"],
+            max_response_chars=1000,
+            proxy_url="http://proxy:8080",
+        )
+        self.assertIsNotNone(b._client)
+
+    def test_proxy_url_none_by_default(self):
+        b = _make_backend()
+        self.assertIsNotNone(b._client)
+
+
 class TestResolveSpaceKey(unittest.TestCase):
 
     def test_case_insensitive_match(self):

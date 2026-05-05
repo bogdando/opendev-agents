@@ -24,9 +24,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     logger.info(
-        "Starting RAG MCP server  transport=%s  backend=%s",
+        "Starting RAG MCP server  transport=%s  backend=%s  proxy=%s",
         config.transport,
         config.backend,
+        "yes" if config.proxy_url else "no",
     )
 
     if config.transport in ("sse", "streamable-http"):

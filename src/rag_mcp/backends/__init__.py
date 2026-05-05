@@ -30,7 +30,11 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
     if config.backend == "solr":
         from rag_mcp.backends.solr import SolrBackend
 
-        return SolrBackend(config.solr_url, config.max_response_chars)
+        return SolrBackend(
+            config.solr_url,
+            config.max_response_chars,
+            proxy_url=config.proxy_url,
+        )
 
     if config.backend == "confluence":
         from rag_mcp.backends.confluence import ConfluenceBackend
@@ -60,6 +64,7 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
             token=config.confluence_token,
             spaces=spaces,
             max_response_chars=config.max_response_chars,
+            proxy_url=config.proxy_url,
         )
 
     raise ValueError(f"Unknown backend: {config.backend!r}")

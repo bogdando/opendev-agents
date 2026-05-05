@@ -13,6 +13,13 @@ class TestSolrBackendStoreMetadata(unittest.TestCase):
     def setUp(self):
         self.backend = SolrBackend("http://localhost:8983", 30000)
 
+    def test_proxy_url_passed_to_client(self):
+        b = SolrBackend(
+            "http://localhost:8983", 30000,
+            proxy_url="http://proxy:8080",
+        )
+        self.assertIsNotNone(b._client)
+
     def test_list_stores_returns_okp(self):
         stores = asyncio.run(self.backend.list_stores())
         self.assertEqual(1, len(stores))

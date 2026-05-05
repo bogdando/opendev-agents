@@ -58,3 +58,20 @@ class ServerConfig(BaseSettings):
         ),
     )
     max_response_chars: int = Field(default=30000, ge=1)
+
+    @property
+    def proxy_url(self) -> str | None:
+        """Return the HTTP(S) proxy URL from the environment, if any.
+
+        Cursor's MCP ``env`` block may strip inherited proxy variables.
+        Reading them eagerly at config time and threading them into httpx
+        ensures backends work inside network-sandboxed containers (nono).
+        """
+        import os
+
+        for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY",
+                     "http_proxy", "ALL_PROXY", "all_proxy"):
+            val = os.environ.get(var)
+            if val:
+                return val
+        return None

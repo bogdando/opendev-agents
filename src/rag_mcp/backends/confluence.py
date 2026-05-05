@@ -142,6 +142,7 @@ class ConfluenceBackend:
         token: str,
         spaces: list[str],
         max_response_chars: int,
+        proxy_url: str | None = None,
     ) -> None:
         self._base_url = _wiki_base_url(
             normalize_confluence_site_url(base_url)
@@ -151,6 +152,7 @@ class ConfluenceBackend:
         self._client = httpx.AsyncClient(
             timeout=30.0,
             auth=(email, token),
+            proxy=proxy_url,
         )
         logger.debug("Confluence backend wiki base URL: %s", self._base_url)
 

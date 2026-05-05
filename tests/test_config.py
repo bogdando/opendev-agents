@@ -45,6 +45,26 @@ class TestServerConfig(unittest.TestCase):
         self.assertEqual("tok", cfg.confluence_token)
         self.assertEqual("S1,S2", cfg.confluence_space)
 
+    def test_proxy_url_from_https_proxy(self):
+        env = {"HTTPS_PROXY": "http://proxy:8080"}
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+            self.assertEqual("http://proxy:8080", cfg.proxy_url)
+
+    def test_proxy_url_from_http_proxy(self):
+        with mock.patch.dict(
+            os.environ,
+            {"HTTP_PROXY": "http://hp:3128"},
+            clear=True,
+        ):
+            cfg = ServerConfig()
+            self.assertEqual("http://hp:3128", cfg.proxy_url)
+
+    def test_proxy_url_none_when_unset(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            cfg = ServerConfig()
+            self.assertIsNone(cfg.proxy_url)
+
 
 class TestBackendFactory(unittest.TestCase):
 

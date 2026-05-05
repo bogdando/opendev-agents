@@ -125,7 +125,8 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
 | `RAG_MCP_LOG_LEVEL` | `INFO` | Set to `DEBUG` to log Confluence CQL and result counts |
-| `SSL_CERT_FILE` | | CA certificate path for HTTPS Solr endpoints |
+| `SSL_CERT_FILE` | (centos default) | CA certificate bundle path for HTTPS Solr endpoints. Falls back to `SSL_CERT_FILE_ALT` |
+| `SSL_CERT_FILE_ALT` | | Fallback CA certificate path when `SSL_CERT_FILE` doesn't exist - e.g. host vs container paths - (or `OKPSSLCERTFILE`) |
 | `NO_PROXY` / `no_proxy` | | Proxy bypass list (e.g. `127.0.0.1,localhost,::1` for local OKP) |
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each

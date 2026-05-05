@@ -12,10 +12,32 @@ __version__ = "0.1.0"
 logger = logging.getLogger(__name__)
 
 
+def _resolve_ssl_cert_file() -> None:
+    """Pick the first existing CA bundle from SSL_CERT_FILE, SSL_CERT_FILE_ALT,
+    or well-known system paths."""
+    import os
+    from pathlib import Path
+
+    primary = os.environ.get("SSL_CERT_FILE", "")
+    if primary and Path(primary).is_file():
+        return
+
+    candidates = [os.environ.get("SSL_CERT_FILE_ALT", "")]
+    candidates += [
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/certs/ca-certificates.crt",
+    ]
+    for path in candidates:
+        if path and Path(path).is_file():
+            os.environ["SSL_CERT_FILE"] = path
+            return
+
+
 def main() -> None:
     """Entry point: parse config, configure logging, start the MCP server."""
     from rag_mcp import server as _server
 
+    _resolve_ssl_cert_file()
     config = ServerConfig()
     _server._server_config = config
 

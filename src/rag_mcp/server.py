@@ -26,9 +26,11 @@ class AppContext:
 @asynccontextmanager
 async def _app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     config = _server_config or ServerConfig()
+    server._mcp_server.name = config.effective_server_name
     backend = get_backend(config)
     logger.info(
-        "RAG MCP server ready  backend=%s  knowledge_dir=%s",
+        "RAG MCP server ready  name=%s  backend=%s  knowledge_dir=%s",
+        config.effective_server_name,
         config.backend,
         config.knowledge_dir,
     )

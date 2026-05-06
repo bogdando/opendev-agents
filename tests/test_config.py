@@ -65,6 +65,22 @@ class TestServerConfig(unittest.TestCase):
             cfg = ServerConfig()
             self.assertIsNone(cfg.proxy_url)
 
+    def test_effective_server_name_defaults_mock(self):
+        cfg = ServerConfig(backend="mock")
+        self.assertEqual("rag-knowledge", cfg.effective_server_name)
+
+    def test_effective_server_name_defaults_solr(self):
+        cfg = ServerConfig(backend="solr")
+        self.assertEqual("rag-knowledge-okp", cfg.effective_server_name)
+
+    def test_effective_server_name_defaults_confluence(self):
+        cfg = ServerConfig(backend="confluence")
+        self.assertEqual("rag-knowledge-wiki", cfg.effective_server_name)
+
+    def test_effective_server_name_override(self):
+        cfg = ServerConfig(backend="mock", server_name="custom-rag")
+        self.assertEqual("custom-rag", cfg.effective_server_name)
+
 
 class TestBackendFactory(unittest.TestCase):
 

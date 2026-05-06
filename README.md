@@ -118,6 +118,7 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAG_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
+| `RAG_MCP_SERVER_NAME` | (per backend) | MCP server name advertised to clients. Defaults to `rag-knowledge` (mock), `rag-knowledge-okp` (solr), `rag-knowledge-wiki` (confluence) |
 | `RAG_MCP_BACKEND` | `mock` | Backend type: `mock`, `solr`, or `confluence` |
 | `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
 | `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |

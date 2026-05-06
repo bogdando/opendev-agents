@@ -26,6 +26,7 @@ class ServerConfig(BaseSettings):
     port: int = 8000
     log_level: str = "INFO"
 
+    server_name: str = ""
     backend: Literal["mock", "solr", "confluence"] = "mock"
     knowledge_dir: str = "./knowledge"
     solr_url: str = "http://localhost:8983"
@@ -58,6 +59,23 @@ class ServerConfig(BaseSettings):
         ),
     )
     max_response_chars: int = Field(default=30000, ge=1)
+
+    @property
+    def effective_server_name(self) -> str:
+        """MCP server name advertised to clients.
+
+        Defaults to a backend-specific name matching the conventional
+        mcp.json keys so that clients (e.g. Cursor) see distinct server
+        identities and don't confuse routing between instances.
+        """
+        if self.server_name:
+            return self.server_name
+        _names = {
+            "mock": "rag-knowledge",
+            "solr": "rag-knowledge-okp",
+            "confluence": "rag-knowledge-wiki",
+        }
+        return _names.get(self.backend, "rag-knowledge")
 
     @property
     def proxy_url(self) -> str | None:

@@ -97,7 +97,7 @@ The prompting actor, whomever or whatever it is, gets formatted markdown injecte
 To let the agents natively running that MCP server instances, provide required configuration
 for each particular backend.
 
-For Cursor, adjust [mcp.json](.cursor/mcp.json) for your case.
+For Cursor, copy `.cursor-templates/mcp.json.template` to `.cursor/mcp.json` and adjust for your case.
 For Claude Code, add the `mcpServers` of `mcp.json` to
 `~/.claude/settings.json` or `.claude/settings.json` in a workspace target project repo, or use CLI commands as well.
 
@@ -105,7 +105,7 @@ For Claude Code, add the `mcpServers` of `mcp.json` to
 > cannot call MCP tools like `search()`. If subagents need to query RAG
 > backends, launch them without the read-only flag.
 
-Example configs for MCP servers are provided in `.cursor/mcp.json`:
+Example configs for MCP servers are provided in `.cursor-templates/mcp.json.template`:
 
 - **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files.
 - **`rag-knowledge-wiki`** — Confluence backend, searches Atlassian Confluence spaces.

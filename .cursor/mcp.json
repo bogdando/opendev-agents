@@ -3,7 +3,6 @@
     "rag-knowledge": {
       "command": "rag-mcp-server",
       "env": {
-        "LD_PRELOAD": "",
         "RAG_MCP_BACKEND": "mock",
         "RAG_MCP_KNOWLEDGE_DIR": "/opt/go/src/github.com/bogdando/opendev-agents/knowledge"
       }
@@ -11,7 +10,6 @@
     "rag-knowledge-wiki": {
       "command": "rag-mcp-server",
       "env": {
-        "LD_PRELOAD": "",
         "RAG_MCP_BACKEND": "confluence",
         "RAG_MCP_CONFLUENCE_URL": "${CONFLUENCEURL}",
         "RAG_MCP_CONFLUENCE_EMAIL": "${CONFLUENCEEMAIL}",
@@ -22,7 +20,6 @@
     "rag-knowledge-okp": {
       "command": "rag-mcp-server",
       "env": {
-        "LD_PRELOAD": "",
         "RAG_MCP_BACKEND": "solr",
         "RAG_MCP_SOLR_URL": "${OKPSOLRURL}",
         "SSL_CERT_FILE": "/etc/pki/tls/certs/ca-bundle.crt",

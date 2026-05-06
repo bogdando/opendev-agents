@@ -120,7 +120,7 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_CONFLUENCE_URL` | | Confluence base (or `CONFLUENCEURL`) |
 | `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`) |
 | `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
-| `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `openstackk8s,RHOSO` (or `CONFLUENCESPACE`) |
+| `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `MYTEAM,MYPROJECT` (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
@@ -168,6 +168,22 @@ Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE
 
 > **NOTE**: Make sure that all exported env vars are interpolated in `mcp.json`
 > before letting the agents to load it.
+
+### Sandbox mode (proxychains-ng)
+
+When running inside a network sandbox that uses `proxychains-ng` (via
+`LD_PRELOAD`), the MCP stdio transport breaks because proxychains
+turns pipes into sockets. To work around this:
+
+- Unset `LD_PRELOAD` before launching `rag-mcp-server` so that
+  proxychains does not intercept the stdio transport.
+- Set `HTTPS_PROXY` in the MCP server's environment so that `httpx`
+  routes backend HTTP requests through the proxy natively.
+
+A thin wrapper script that does `unset LD_PRELOAD; exec rag-mcp-server "$@"`
+is sufficient. The sandbox entry point should patch `mcp.json` at
+startup to inject the session proxy URL and rewrite the `command` to
+use the wrapper.
 
 For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
 with it via `curl`:

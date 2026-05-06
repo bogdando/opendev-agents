@@ -181,7 +181,7 @@ class TestConfluenceSearch(unittest.TestCase):
 
     def test_formats_results(self):
         backend = _make_backend(["MYSPACE"])
-        pages = [_confluence_page(title="RHOSO Guide", body="<p>operator setup</p>")]
+        pages = [_confluence_page(title="Deploy Guide", body="<p>operator setup</p>")]
 
         mock_response = mock.MagicMock()
         mock_response.status_code = 200
@@ -194,7 +194,7 @@ class TestConfluenceSearch(unittest.TestCase):
 
         self.assertEqual(1, len(results))
         self.assertEqual("operator setup", results[0]["text"])
-        self.assertEqual("RHOSO Guide", results[0]["metadata"]["title"])
+        self.assertEqual("Deploy Guide", results[0]["metadata"]["title"])
         self.assertEqual("myspace", results[0]["metadata"]["store_id"])
         self.assertIn("/wiki/spaces/MYSPACE", results[0]["source"])
 
@@ -265,8 +265,8 @@ class TestConfluenceSearch(unittest.TestCase):
 class TestWikiCqlHelpers(unittest.TestCase):
 
     def test_search_cql_and_tokens_title_or_text(self):
-        cql = _wiki_search_cql("RHOSO", ["nova", "cell"])
-        self.assertIn('space = "RHOSO"', cql)
+        cql = _wiki_search_cql("MYPROJECT", ["nova", "cell"])
+        self.assertIn('space = "MYPROJECT"', cql)
         self.assertIn('type in ("page", "blogpost")', cql)
         self.assertIn('(text ~ "nova" OR title ~ "nova")', cql)
         self.assertIn('(text ~ "cell" OR title ~ "cell")', cql)

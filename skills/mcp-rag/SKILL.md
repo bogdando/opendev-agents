@@ -20,7 +20,7 @@ and `RAG_MCP_PORT` must be added for HTTP access in CLI mode (cursor-agent).
 
 If the server is already running on port 8321, skip this step.
 
-In a container sandbox (rhoso-aid), Landlock blocks `bind()` on
+In a container sandbox with Landlock enabled, `bind()` is blocked on
 unlisted ports. If you can't see `ALLOW_BIND_PORTS` defined in the
 environment vars, ask user to re-launch the sandbox with
 `ALLOW_BIND_PORTS="8321,8322,8323"` to open the debug ports and stop

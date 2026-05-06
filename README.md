@@ -101,6 +101,10 @@ For Cursor, adjust [mcp.json](.cursor/mcp.json) for your case.
 For Claude Code, add the `mcpServers` of `mcp.json` to
 `~/.claude/settings.json` or `.claude/settings.json` in a workspace target project repo, or use CLI commands as well.
 
+> **NOTE**: Subagents launched in read-only mode (e.g. Cursor's `readonly: true`)
+> cannot call MCP tools like `search()`. If subagents need to query RAG
+> backends, launch them without the read-only flag.
+
 Example configs for MCP servers are provided in `.cursor/mcp.json`:
 
 - **`rag-knowledge`** — mock backend, searches local markdown, RST, adoc, txt files.
@@ -184,6 +188,12 @@ A thin wrapper script that does `unset LD_PRELOAD; exec rag-mcp-server "$@"`
 is sufficient. The sandbox entry point should patch `mcp.json` at
 startup to inject the session proxy URL and rewrite the `command` to
 use the wrapper.
+
+**Limitation:** only one sandboxed agent per workspace at a time. Each
+sandbox session gets a unique proxy token baked into `mcp.json`. A
+second agent in the same workspace would get a different token, but
+`mcp.json` can only hold one. The entry point should detect the
+conflict and abort.
 
 For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
 with it via `curl`:

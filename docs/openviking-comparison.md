@@ -116,10 +116,97 @@ The mock backend adds value over raw `ls`/`find` by providing:
 4. **Server-side enforcement** — `vector_store_id` required, preventing
    speculative searches
 
+## The hooks gap: transparent memory vs explicit search
+
+OpenViking's [Claude Code plugin](https://github.com/volcengine/OpenViking/tree/main/examples/claude-code-memory-plugin)
+hooks into Claude Code's lifecycle events to provide **transparent**
+memory — the agent never calls `search()` or `remember()`:
+
+| Hook point | Action | Agent aware? |
+|---|---|---|
+| Before every prompt | Recall: search memories, inject ≤6 results (2k token budget) | No |
+| After each response | Capture: queue the turn for memory extraction | No |
+| Session start | Inject user profile + memory index | No |
+| Session end / compaction | Commit pending messages to long-term memory | No |
+| Subagent spawn | Create isolated memory session | No |
+
+This is the same architectural pattern as Option E (transparent LLM
+proxy) in [k8s landscape document](./k8s-agentic-landscape.md) but applied to **memory**
+rather than knowledge injection. The plugin operates outside the agent's reasoning loop.
+
+### Why MCP `search()` cannot replicate this
+
+| Capability | MCP `search()` | Hooks |
+|---|---|---|
+| Recall relevant context | Agent must decide to call it | Automatic before every prompt |
+| Recall past sessions | No — stores are static knowledge | Yes — primary purpose |
+| Save new learnings | No — `search()` is read-only | Yes — auto-capture every turn |
+| Improve accuracy over time | No — stores are curated externally | Yes — grows with each session |
+| Zero agent cooperation | No — needs rules + compliance | Yes — transparent |
+
+The root cause: MCP protocol has no lifecycle hooks. There is no
+"before prompt" or "after response" event that an MCP server can
+subscribe to. The agent must explicitly choose to call tools, which
+means it must burn tokens reasoning about when/what to search.
+
+### Is explicit search obsoleted by hooks?
+
+No. They serve different purposes:
+
+- **Hooks** (OpenViking) → personal, per-user memory that grows
+  automatically. "What did I discuss with this agent last week?"
+- **Explicit search** (rag-mcp-server) → shared, curated team
+  knowledge. "What are the Nova API conventions?"
+
+The agent doesn't need to remember team docs — those are static and
+curated externally. But it does benefit from remembering your
+preferences, past decisions, and what it learned from previous
+sessions in this project.
+
+The ideal toolchain uses **both**: hooks for personal memory,
+explicit `search()` for shared knowledge.
+
+### Integration limits: hooks are vendor-specific
+
+The hook mechanism is **Claude Code's plugin API**, not MCP protocol.
+This fundamentally limits where the transparent memory system works:
+
+| Client | Hooks? | Transparent memory? | Fallback |
+|--------|--------|---------------------|----------|
+| Claude Code | Yes (plugin API) | Yes | — |
+| Cursor | No | No | Advisory rule: "call `recall()` at session start" (fragile, costs tokens) |
+| Continue / OpenCode / Codex | No | No | Same explicit-tool fallback |
+| Any generic MCP client | No | No | Must rely on agent cooperation |
+
+This means OpenViking's memory system and rag-mcp-server **cannot
+integrate at the protocol level**. They can only coexist as parallel
+systems:
+
+- Hooks inject memory (where available) — invisible to the agent
+- MCP `search()` provides knowledge — agent decides when to call it
+
+For clients without hooks, memory must degrade to explicit MCP tools
+(`recall()`, `remember()`), which loses the zero-cooperation benefit.
+The agent must burn tokens deciding "should I recall?" and "should I
+save this?" — the same problem as explicit `search()` for knowledge.
+
+**Implication for rag-mcp-server**: Adding a `memory` backend with
+`recall()`/`remember()` tools would work everywhere MCP works, but
+would always be inferior to hooks in clients that support them:
+
+- Extra token cost per turn (agent reasons about recall/save)
+- Agent may forget to call `recall()` (especially in long sessions)
+- Agent may over-save or under-save (no compressor intelligence)
+
+The hooks approach is architecturally correct but non-portable.
+The MCP approach is portable but inferior.
+
 ## Integration potential: combining approaches
 
-The most compelling composition would combine rag-mcp-server's
-simplicity for text knowledge with OpenViking's session memory system:
+Given the hook limitation, the realistic composition is **parallel
+coexistence** rather than deep integration. In Claude Code, both
+systems fire independently; in other clients, memory falls back to
+explicit tools:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -152,30 +239,56 @@ simplicity for text knowledge with OpenViking's session memory system:
 
 ### Concrete integration paths
 
-**Path 1: OpenViking as memory backend for rag-mcp-server**
+**Path 1: Parallel coexistence (no integration needed)**
 
-Add a `memory` backend to rag-mcp-server that delegates session
-compression and recall to an OpenViking instance. The existing
-`search()` tool handles knowledge; a new `recall()` tool handles
-memories:
+The simplest and most realistic path. Both systems run independently
+for the same agent:
+
+- **Claude Code**: OpenViking hooks inject memory transparently;
+  rag-mcp-server provides knowledge via MCP `search()`. They never
+  talk to each other — the agent benefits from both without knowing.
+- **Cursor / other clients**: Only rag-mcp-server works (MCP). No
+  memory unless the agent is explicitly instructed to call OpenViking
+  MCP tools (losing the transparent benefit).
+
+This is not "integration" — it's coexistence. But it's the only
+path that preserves the hook advantage where available.
+
+**Path 2: Explicit `recall()` / `remember()` tools (portable fallback)**
+
+Add memory tools to rag-mcp-server that delegate to OpenViking's API:
 
 ```python
-# New tool alongside search()
 @mcp.tool()
 async def recall(query: str, session_id: str) -> list[dict]:
     """Recall memories from past sessions."""
     return await openviking_client.find(query, target_uri="viking://user/memories")
+
+@mcp.tool()
+async def remember(content: str, session_id: str) -> str:
+    """Save a memory for future sessions."""
+    return await openviking_client.add_memory(content, session_id=session_id)
 ```
 
-**Path 2: rag-mcp-server stores exposed as OpenViking resources**
+This works in **all MCP clients** but is strictly inferior to hooks:
+the agent must decide when to call these tools, burning tokens on
+each decision. An advisory rule can prompt it ("recall at session
+start, remember important decisions") but compliance degrades over
+long sessions.
 
-Register rag-mcp-server knowledge stores as OpenViking resources via
-its `add_resource` API. OpenViking would generate L0/L1 summaries and
-vector-index the content, enabling its hierarchical retrieval to find
-the right store/file. The raw content still lives in
-rag-mcp-server's backend (mock/solr/confluence).
+**Path 3: rag-mcp-server stores as OpenViking resources**
 
-**Path 3: Selective VLM — only for non-text**
+Register rag-mcp-server knowledge stores in OpenViking via its
+`add_resource` API. OpenViking generates L0/L1 summaries and
+vector-indexes the content. In Claude Code, the hooks would then
+also surface relevant *knowledge* (not just memories) before each
+prompt — effectively making knowledge retrieval transparent too.
+
+Downside: duplicates indexing effort, conflates knowledge with
+memory, and ties knowledge delivery to the hooks (unavailable in
+other clients).
+
+**Path 4: Selective VLM — only for non-text**
 
 Use OpenViking's VLM pipeline exclusively for binary content (PDFs,
 images, diagrams) while keeping text knowledge in rag-mcp-server's
@@ -187,16 +300,20 @@ search("RHOSO deployment architecture")
   └─ OpenViking: VLM-indexed architecture diagrams, PDF guides
 ```
 
+This path is about **content type**, not memory. It works via MCP
+in all clients — no hooks needed.
+
 ### What this solves that neither alone can
 
-| Gap | rag-mcp-server alone | OpenViking alone | Combined |
+| Gap | rag-mcp-server alone | OpenViking alone | Coexisting |
 |-----|---------------------|-----------------|----------|
-| Session memory | No | Yes | Yes (OpenViking memory) |
+| Session memory | No | Yes (hooks only in Claude Code) | Yes — but only in Claude Code |
 | Zero-cost text knowledge | Yes | No (requires models) | Yes (mock backend) |
-| Multimodal content | No | Yes | Yes (VLM for non-text) |
+| Multimodal content | No | Yes | Yes (Path 4: VLM for non-text) |
 | Token-efficient retrieval | Partial (excerpts) | Yes (L0/L1/L2) | Yes |
-| Cross-session learning | No | Yes | Yes |
-| Simple deployment | Yes | No | Partial (memory is optional) |
+| Cross-session learning | No | Yes (hooks) / Partial (MCP tools) | Hooks: yes. MCP fallback: degraded |
+| Simple deployment | Yes | No | Partial (memory is optional add-on) |
+| Portable across clients | Yes (any MCP client) | No (hooks = Claude Code only) | Knowledge: yes. Memory: Claude Code only at full quality |
 
 ## OpenViking's L0/L1/L2 as a design pattern
 

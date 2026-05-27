@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from fastmcp import Context
+try:
+    from fastmcp import Context
+except ImportError:
+    from mcp.server.fastmcp import Context
 
 from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.formatting import format_results
 from rag_mcp.server import get_app_context, mcp
 
 
-@mcp.tool
+@mcp.tool()
 async def search(
     ctx: Context,
     query: str,

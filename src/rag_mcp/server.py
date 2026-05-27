@@ -7,7 +7,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastmcp import Context, FastMCP
+try:
+    from fastmcp import Context, FastMCP
+except ImportError:
+    from mcp.server.fastmcp import Context, FastMCP
 
 from rag_mcp.backends import BackendProtocol, get_backend
 from rag_mcp.config import ServerConfig

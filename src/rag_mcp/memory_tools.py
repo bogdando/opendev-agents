@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from fastmcp import Context
+try:
+    from fastmcp import Context
+except ImportError:
+    from mcp.server.fastmcp import Context
 
 from rag_mcp.memory import VALID_CATEGORIES
 from rag_mcp.server import get_app_context, mcp
 
 
-@mcp.tool
+@mcp.tool()
 async def recall(
     ctx: Context,
     query: str,
@@ -54,7 +57,7 @@ async def recall(
     return "\n".join(lines)
 
 
-@mcp.tool
+@mcp.tool()
 async def remember(
     ctx: Context,
     content: str,

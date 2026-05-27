@@ -18,7 +18,12 @@ See also my further ideas for brain storming topics for:
 * [search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
 knowledge retrieval approaches;
 * [long-running subagents](docs/long-running-subagents.md) for how deep agents
-maintain instructional consistency over extended sessions.
+maintain instructional consistency over extended sessions;
+* [Kubernetes agentic landscape](docs/k8s-agentic-landscape.md) and
+[OpenViking comparison](docs/openviking-comparison.md) for the future vision of
+autonomous ASDLC — where sandbox runtimes, MCP gateways, agent identity, and
+context databases compose into a fully autonomous toolchain (the current state
+is human-driven, AI-assisted SDLC).
 
 Applying for Cursor agent/IDE etc
 =================================

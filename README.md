@@ -140,9 +140,9 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `NO_PROXY` / `no_proxy` | | Proxy bypass list (e.g. `127.0.0.1,localhost,::1` for local OKP) |
 | `RAG_MCP_MEMORY_BACKEND` | `none` | Memory backend: `local` (file-based), `openviking` (semantic), or `none` (disabled) |
 | `RAG_MCP_MEMORY_DIR` | `./.memories` | Storage path for local memory backend |
-| `RAG_MCP_OPENVIKING_URL` | `http://localhost:1933` | OpenViking server URL (openviking backend) |
+| `RAG_MCP_OPENVIKING_URL` | `http://127.0.0.1:1933` | OpenViking server URL (openviking backend) |
 | `RAG_MCP_OPENVIKING_ACCOUNT` | `default` | OpenViking account header |
-| `RAG_MCP_OPENVIKING_USER` | `developer` | OpenViking user header |
+| `RAG_MCP_OPENVIKING_USER` | `default` | OpenViking user header |
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
@@ -259,7 +259,7 @@ semantic recall via embedding-based search:
 
 ```bash
 export RAG_MCP_MEMORY_BACKEND=openviking
-export RAG_MCP_OPENVIKING_URL=http://localhost:1933
+export RAG_MCP_OPENVIKING_URL=http://127.0.0.1:1933
 ```
 
 OpenViking runs in "memories only" mode — no VLM, no resource ingestion,
@@ -276,7 +276,7 @@ just embedding-based store + recall. Minimal `~/.openviking/ov.conf`:
     "dense": {
       "provider": "ollama",
       "model": "nomic-embed-text",
-      "api_base": "http://localhost:11434",
+      "api_base": "http://127.0.0.1:11434/v1",
       "dimension": 768
     }
   },

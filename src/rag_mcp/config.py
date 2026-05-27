@@ -62,9 +62,9 @@ class ServerConfig(BaseSettings):
 
     memory_backend: Literal["local", "openviking", "none"] = "none"
     memory_dir: str = "./.memories"
-    openviking_url: str = "http://localhost:1933"
+    openviking_url: str = "http://127.0.0.1:1933"
     openviking_account: str = "default"
-    openviking_user: str = "developer"
+    openviking_user: str = "default"
     openviking_agent_id: str = "rag-mcp-server"
 
     @property

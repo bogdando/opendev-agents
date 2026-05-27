@@ -6,9 +6,9 @@
         "RAG_MCP_BACKEND": "mock",
         "RAG_MCP_KNOWLEDGE_DIR": "/opt/go/src/github.com/bogdando/opendev-agents/knowledge",
         "RAG_MCP_MEMORY_BACKEND": "openviking",
-        "RAG_MCP_OPENVIKING_URL": "http://localhost:1933",
+        "RAG_MCP_OPENVIKING_URL": "http://127.0.0.1:1933",
         "RAG_MCP_OPENVIKING_ACCOUNT": "default",
-        "RAG_MCP_OPENVIKING_USER": "developer",
+        "RAG_MCP_OPENVIKING_USER": "default",
         "RAG_MCP_OPENVIKING_AGENT_ID": "rag-mcp-server"
       }
     },

@@ -22,7 +22,7 @@ class OpenVikingMemoryBackend:
 
     def __init__(
         self,
-        url: str = "http://localhost:1933",
+        url: str = "http://127.0.0.1:1933",
         account: str = "default",
         user: str = "developer",
         agent_id: str = "rag-mcp-server",
@@ -37,26 +37,26 @@ class OpenVikingMemoryBackend:
         }
 
     def _memory_prefix(self) -> str:
-        return f"viking://agent/{self._agent_id}/memories"
+        return f"viking://user/{self._user}/memories"
 
     async def recall(
         self, query: str, category: str = "", top_k: int = 5
     ) -> list[dict]:
         """Semantic search over stored memories via OV's search API."""
-        search_path = self._memory_prefix()
+        target_uri = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
-            search_path = f"{search_path}/{category}"
+            target_uri = f"{target_uri}/{category}"
 
         payload = {
             "query": query,
-            "path": search_path,
-            "top_k": top_k,
+            "target_uri": target_uri,
+            "limit": top_k,
         }
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.post(
-                    f"{self._url}/api/v1/search",
+                    f"{self._url}/api/v1/search/search",
                     json=payload,
                     headers=self._headers,
                 )
@@ -67,23 +67,45 @@ class OpenVikingMemoryBackend:
             return []
 
         results: list[dict] = []
-        for item in data.get("results", []):
+        result_data = data.get("result", data)
+        memories = result_data.get("memories", result_data.get("results", []))
+        for item in memories:
+            uri = item.get("uri", "")
+            content = item.get("content", "")
+            if not content and uri:
+                content = await self._read_content(uri)
             results.append(
                 {
-                    "content": item.get("content", ""),
-                    "category": item.get("metadata", {}).get(
-                        "category", "context"
-                    ),
-                    "saved_at": item.get("metadata", {}).get("saved_at", ""),
-                    "uri": item.get("uri", ""),
+                    "content": content,
+                    "category": item.get("category", "context"),
+                    "saved_at": item.get("saved_at", ""),
+                    "uri": uri,
                 }
             )
         return results
 
+    async def _read_content(self, uri: str) -> str:
+        """Fetch the actual content of a memory file from OV."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{self._url}/api/v1/content/read",
+                    params={"uri": uri},
+                    headers=self._headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                result = data.get("result", "")
+                if isinstance(result, str):
+                    return result
+                return result.get("content", "") if isinstance(result, dict) else ""
+        except httpx.HTTPError:
+            return ""
+
     async def remember(
         self, content: str, category: str = "context"
     ) -> dict:
-        """Store a memory in OpenViking via the resources API."""
+        """Store a memory in OpenViking via the content/write API."""
         if category not in VALID_CATEGORIES:
             category = "context"
 
@@ -91,20 +113,23 @@ class OpenVikingMemoryBackend:
         timestamp = now.strftime("%Y%m%dT%H%M%SZ")
         uri = f"{self._memory_prefix()}/{category}/{timestamp}.md"
 
+        frontmatter = (
+            f"---\ncategory: {category}\n"
+            f"saved_at: {now.isoformat()}\n"
+            f"agent_id: {self._agent_id}\n---\n\n"
+        )
+
         payload = {
             "uri": uri,
-            "content": content,
-            "metadata": {
-                "category": category,
-                "saved_at": now.isoformat(),
-                "agent_id": self._agent_id,
-            },
+            "content": frontmatter + content,
+            "mode": "create",
+            "wait": True,
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
-                    f"{self._url}/api/v1/resources",
+                    f"{self._url}/api/v1/content/write",
                     json=payload,
                     headers=self._headers,
                 )
@@ -133,12 +158,12 @@ class OpenVikingMemoryBackend:
         if category and category in VALID_CATEGORIES:
             list_path = f"{list_path}/{category}"
 
-        params = {"path": list_path, "limit": limit}
+        params = {"path": list_path}
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
-                    f"{self._url}/api/v1/resources",
+                    f"{self._url}/api/v1/fs/ls",
                     params=params,
                     headers=self._headers,
                 )
@@ -149,15 +174,13 @@ class OpenVikingMemoryBackend:
             return []
 
         results: list[dict] = []
-        for item in data.get("items", []):
+        for item in data.get("entries", data.get("items", []))[:limit]:
             results.append(
                 {
-                    "content": item.get("content", item.get("name", "")),
-                    "category": item.get("metadata", {}).get(
-                        "category", category or "context"
-                    ),
-                    "saved_at": item.get("metadata", {}).get("saved_at", ""),
-                    "uri": item.get("uri", ""),
+                    "content": item.get("name", ""),
+                    "category": category or "context",
+                    "saved_at": item.get("updated_at", ""),
+                    "uri": item.get("uri", item.get("path", "")),
                 }
             )
         return results

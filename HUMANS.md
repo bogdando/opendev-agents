@@ -101,6 +101,9 @@ RAG-as-MCP servers already exist in [RHEL Lightspeed](https://github.com/rhel-li
 * [docs2db-mcp-server](https://github.com/rhel-lightspeed/docs2db-mcp-server) - FastMCP wrapper over [docs2db-api](https://github.com/rhel-lightspeed/docs2db-api) hybrid search. Returns structured chunks `{text, similarity, source, metadata}`, for the agent which routes it to its own model. Corpus built offline by [docs2db](https://github.com/rhel-lightspeed/docs2db): Docling ingest → contextual chunking → embeddings → PostgreSQL.
 * [okp-mcp](https://github.com/rhel-lightspeed/okp-mcp) - MCP bridge to Solr/OKP with tools `search_documentation`, `search_solutions`, `search_cves`, `search_errata`, `search_articles`, `get_document`. Returns formatted markdown strings - ready-to-use for single-store advisory lookups in the prose rules. Harder to compose across stores (or trim to a token budget) compared to structured chunks.
 
+Context databases that unify retrieval, memory, and multimodal understanding:
+* [OpenViking](https://github.com/volcengine/OpenViking) - "Context Database" for agents: virtual filesystem (AGFS) with L0/L1/L2 tiered content loading, directory-recursive retrieval with score propagation, VLM-assisted multimodal ingestion, session compression, and 8-category memory extraction. Heavy infrastructure (embedding model + VLM mandatory) but solves token budget management for large heterogeneous corpora. See [docs/openviking-comparison.md](./docs/openviking-comparison.md) for a detailed comparison with our mock backend and integration potential.
+
 See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md) for a detailed design proposal.
 
 Despite prior art, no standardized architectural style yet answers:

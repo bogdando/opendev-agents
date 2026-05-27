@@ -24,7 +24,7 @@ In a container sandbox with Landlock enabled, `bind()` is blocked on
 unlisted ports. If you can't see `ALLOW_BIND_PORTS` defined in the
 environment vars, ask user to re-launch the sandbox with
 `ALLOW_BIND_PORTS="8321,8322,8323"` to open the debug ports and stop
-the skill execution until done.
+the skill execution until done~.
 
 ```bash
 RAG_MCP_TRANSPORT=streamable-http \

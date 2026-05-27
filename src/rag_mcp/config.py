@@ -60,6 +60,13 @@ class ServerConfig(BaseSettings):
     )
     max_response_chars: int = Field(default=30000, ge=1)
 
+    memory_backend: Literal["local", "openviking", "none"] = "none"
+    memory_dir: str = "./.memories"
+    openviking_url: str = "http://localhost:1933"
+    openviking_account: str = "default"
+    openviking_user: str = "developer"
+    openviking_agent_id: str = "rag-mcp-server"
+
     @property
     def effective_server_name(self) -> str:
         """MCP server name advertised to clients.

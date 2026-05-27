@@ -138,6 +138,12 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `SSL_CERT_FILE` | (centos default) | CA certificate bundle path for HTTPS Solr endpoints. Falls back to `SSL_CERT_FILE_ALT` |
 | `SSL_CERT_FILE_ALT` | | Fallback CA certificate path when `SSL_CERT_FILE` doesn't exist - e.g. host vs container paths - (or `OKPSSLCERTFILE`) |
 | `NO_PROXY` / `no_proxy` | | Proxy bypass list (e.g. `127.0.0.1,localhost,::1` for local OKP) |
+| `RAG_MCP_MEMORY_BACKEND` | `none` | Memory backend: `local` (file-based), `openviking` (semantic), or `none` (disabled) |
+| `RAG_MCP_MEMORY_DIR` | `./.memories` | Storage path for local memory backend |
+| `RAG_MCP_OPENVIKING_URL` | `http://localhost:1933` | OpenViking server URL (openviking backend) |
+| `RAG_MCP_OPENVIKING_ACCOUNT` | `default` | OpenViking account header |
+| `RAG_MCP_OPENVIKING_USER` | `developer` | OpenViking user header |
+| `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
 subdirectory name becomes a `vector_store_id`. Works with `.adoc`, `.md`, `.rst`, `.txt`.
@@ -235,3 +241,64 @@ See [docs/external-agentic-workflows.md](./docs/external-agentic-workflows.md)
 for am example step-by-step guide using
 [openstack-agentic-workflows](https://github.com/sbauza/openstack-agentic-workflows)
 connected as a local `nova-dev` store.
+
+### Cross-session memory
+
+The server exposes optional `recall()` and `remember()` MCP tools for
+cross-session memory management. Disabled by default (`RAG_MCP_MEMORY_BACKEND=none`).
+
+Enable the local file backend (zero infrastructure, keyword search):
+
+```bash
+export RAG_MCP_MEMORY_BACKEND=local
+export RAG_MCP_MEMORY_DIR=./.memories
+```
+
+Or delegate to [OpenViking](https://github.com/volcengine/OpenViking) for
+semantic recall via embedding-based search:
+
+```bash
+export RAG_MCP_MEMORY_BACKEND=openviking
+export RAG_MCP_OPENVIKING_URL=http://localhost:1933
+```
+
+OpenViking runs in "memories only" mode — no VLM, no resource ingestion,
+just embedding-based store + recall. Minimal `~/.openviking/ov.conf`:
+
+```json
+{
+  "storage": {
+    "workspace": "~/.openviking/data",
+    "vectordb": { "name": "memories", "backend": "local" },
+    "agfs": { "backend": "local" }
+  },
+  "embedding": {
+    "dense": {
+      "provider": "ollama",
+      "model": "nomic-embed-text",
+      "api_base": "http://localhost:11434",
+      "dimension": 768
+    }
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 1933,
+    "auth_mode": "trusted"
+  }
+}
+```
+
+Start OV alongside rag-mcp-server: `openviking-server --config ~/.openviking/ov.conf`
+
+For cloud embeddings (higher recall quality), replace the `embedding.dense`
+section with an OpenAI or other provider config — see
+[specs/memory-tools.md](./specs/memory-tools.md#openviking-memories-only-configuration)
+for alternatives.
+
+Memory tools are triggered by advisory rules with `@@RECALL:` / `@@REMEMBER:`
+markers (see `templates/memory-advisory.mdc`) or by direct human instructions.
+Categories: `preference`, `decision`, `learning`, `correction`, `context`, `workflow`.
+
+See [specs/memory-tools.md](./specs/memory-tools.md) for the full design spec
+and [docs/openviking-comparison.md](./docs/openviking-comparison.md) for how
+this relates to OpenViking's hook-based transparent memory.

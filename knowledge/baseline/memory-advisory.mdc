@@ -1,0 +1,21 @@
+---
+description: Cross-session memory management via recall() and remember() tools
+alwaysApply: true
+globs: []
+---
+
+@@RECALL: At the start of each session, call recall() with your
+current task context to retrieve relevant memories from past sessions.
+This helps maintain continuity across conversations.
+
+@@REMEMBER: When the user explicitly states a preference, makes a
+significant architectural decision, corrects you, or confirms a
+successful multi-step procedure, call remember() to save it.
+Categories:
+- preference: coding style, tool choices, naming conventions
+- decision: architectural choices, tech stack selections
+- learning: project-specific knowledge you discovered
+- correction: mistakes you made that shouldn't repeat
+- context: general useful context for future sessions
+- workflow: successful multi-step procedures with inputs, steps,
+  and human feedback — include enough detail to reproduce later

@@ -336,6 +336,8 @@ value proposition.
 
 - [specs/rag-mcp-server.md](../specs/rag-mcp-server.md) — RAG MCP
   server design
+- [specs/memory-tools.md](../specs/memory-tools.md) — Explicit
+  `recall()` / `remember()` tools design spec (Path 2 implementation)
 - [specs/lightspeed-core-solr.md](../specs/lightspeed-core-solr.md) —
   Solr integration options (semantic/hybrid search)
 - [docs/k8s-agentic-landscape.md](./k8s-agentic-landscape.md) —

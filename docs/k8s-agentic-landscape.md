@@ -277,6 +277,27 @@ the Kubernetes API level. This makes it more portable (works without
 an existing K8s cluster) but less integrated with cluster-level
 governance.
 
+## Mapping to REST-moment gaps
+
+[HUMANS.md](../HUMANS.md) identifies five "REST moment" gaps that no
+standardized architectural style yet answers for agents. How do the
+landscape tools address them?
+
+| Gap ([HUMANS.md](../HUMANS.md)) | REST analogy | Addressed by | Still missing |
+|------|-------------|--------------|--------------|
+| **Discovery** | HATEOAS | Kagenti (A2A agent cards for agent discovery), MCP Gateway (tool aggregation behind single endpoint) | No standard links an agent card to its MCP tool dependencies |
+| **Composition** | Idempotency, status codes | MCP Gateway (tool aggregation, prefixing) | No way to specify, audit, or enforce valid tool chains |
+| **Versioning** | URL versioning, content negotiation | — | No project addresses tool schema evolution or knowledge currency |
+| **Authorization Scoping** | OAuth scopes | Kagenti (SPIFFE identity), MCP Gateway (Keycloak tool-level ACL) | No data-tier scoping within a tool (per-store access control) |
+| **Contracts** | OpenAPI | — | No machine-readable declaration of MCP dependencies or capability requirements |
+
+**Verdict**: The landscape tools solve the **infrastructure** for
+discovery and auth (identity, routing, ACL) but not the
+**conventions** (how to declare, version, and validate tool
+contracts). The REST moment remains unfilled at the contract and
+versioning layers — these require protocol-level standards, not just
+Kubernetes operators.
+
 ## Summary
 
 | Question | Answer |

@@ -31,7 +31,6 @@ class AppContext:
 @asynccontextmanager
 async def _app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     config = _server_config or ServerConfig()
-    server._mcp_server.name = config.effective_server_name
     backend = get_backend(config)
     memory = get_memory_backend(config)
     logger.info(
@@ -48,8 +47,10 @@ def get_app_context(ctx: Context) -> AppContext:
     return ctx.request_context.lifespan_context["app"]
 
 
+_init_config = ServerConfig()
+
 mcp = FastMCP(
-    "rag-knowledge",
+    _init_config.effective_server_name,
     instructions=(
         "Search external knowledge bases (OpenStack docs, project specs, "
         "deployment guides) to augment your answers. Use the search tool "

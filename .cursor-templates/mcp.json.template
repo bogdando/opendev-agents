@@ -16,6 +16,7 @@
     "rag-knowledge-wiki": {
       "command": "rag-mcp-server",
       "env": {
+        "RAG_MCP_SERVER_NAME": "rag-knowledge-wiki",
         "RAG_MCP_BACKEND": "confluence",
         "RAG_MCP_CONFLUENCE_URL": "${CONFLUENCEURL}",
         "RAG_MCP_CONFLUENCE_EMAIL": "${CONFLUENCEEMAIL}",
@@ -26,6 +27,7 @@
     "rag-knowledge-okp": {
       "command": "rag-mcp-server",
       "env": {
+        "RAG_MCP_SERVER_NAME": "rag-knowledge-okp",
         "RAG_MCP_BACKEND": "solr",
         "RAG_MCP_SOLR_URL": "${OKPSOLRURL}",
         "SSL_CERT_FILE": "/etc/pki/tls/certs/ca-bundle.crt",

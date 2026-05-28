@@ -4,13 +4,15 @@ alwaysApply: true
 globs: []
 ---
 
-@@RECALL: At the start of each session, call recall() with your
-current task context to retrieve relevant memories from past sessions.
-This helps maintain continuity across conversations.
+@@RECALL: MANDATORY At the start of each session, always call recall(query=...) with
+your current task context to retrieve relevant memories from past
+sessions. This helps maintain continuity across conversations.
 
-@@REMEMBER: When the user explicitly states a preference, makes a
+@@REMEMBER: MANDATORY When the user explicitly states a preference, makes a
 significant architectural decision, corrects you, or confirms a
-successful multi-step procedure, call remember() to save it.
+successful multi-step procedure, or when your (agent's) issued tool command
+succeeds with expected results, call remember(content=..., category=...)
+to save it. The required parameter is `content`.
 Categories:
 - preference: coding style, tool choices, naming conventions
 - decision: architectural choices, tech stack selections

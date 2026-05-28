@@ -262,8 +262,8 @@ export RAG_MCP_MEMORY_BACKEND=openviking
 export RAG_MCP_OPENVIKING_URL=http://127.0.0.1:1933
 ```
 
-OpenViking runs in "memories only" mode — no VLM, no resource ingestion,
-just embedding-based store + recall. Minimal `~/.openviking/ov.conf`:
+OpenViking may run in "memories only" mode - just embedding-based store + recall.
+Minimal `~/.openviking/ov.conf`:
 
 ```json
 {
@@ -288,15 +288,37 @@ just embedding-based store + recall. Minimal `~/.openviking/ov.conf`:
 }
 ```
 
-Start OV alongside rag-mcp-server: `openviking-server --config ~/.openviking/ov.conf`
+Start OV alongside rag-mcp-server: `openviking-server --config ~/.openviking/ov.conf`.
+For local embeddings install and start Ollama:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull nomic-embed-text
+```
 
 For cloud embeddings (higher recall quality), replace the `embedding.dense`
 section with an OpenAI or other provider config — see
 [specs/memory-tools.md](./specs/memory-tools.md#openviking-memories-only-configuration)
 for alternatives.
 
-Memory tools are triggered by advisory rules with `@@RECALL:` / `@@REMEMBER:`
-markers (see `templates/memory-advisory.mdc`) or by direct human instructions.
+For sandboxed agent access, ollama has to listen on `OLLAMA_HOST=0.0.0.0:11434`,
+or on the interface IP accessible from the sandbox gateway.
+
+Use custom systemd service templates (adjust `OLLAMA_HOST` and `OLLAMA_MODELS` as needed):
+```bash
+mkdir -p ~/.config/systemd/user
+cp .cursor-templates/ollama.service ~/.config/systemd/user/
+cp .cursor-templates/ollama-pull.service ~/.config/systemd/user/
+cp .cursor-templates/openviking.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now openviking
+sudo systemctl disable --now ollama.service
+systemctl --user enable --now ollama
+systemctl --user enable --now ollama-pull
+```
+
+Memory tools should be triggered by baseline rules with `@@RECALL:` / `@@REMEMBER:`
+markers (see `knowledge/baseline/memory-advisory.mdc`) and/or by direct human instructions.
 Categories: `preference`, `decision`, `learning`, `correction`, `context`, `workflow`.
 
 See [specs/memory-tools.md](./specs/memory-tools.md) for the full design spec

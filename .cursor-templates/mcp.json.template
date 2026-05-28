@@ -10,7 +10,9 @@
         "RAG_MCP_OPENVIKING_ACCOUNT": "default",
         "RAG_MCP_OPENVIKING_USER": "default",
         "RAG_MCP_OPENVIKING_AGENT_ID": "rag-mcp-server",
-        "RAG_MCP_OPENVIKING_API_KEY": ""
+        "RAG_MCP_OPENVIKING_API_KEY": "${OPENVIKING_API_KEY}",
+        "NO_PROXY": "${OKPNOPROXY}",
+        "no_proxy": "${OKPNOPROXY}"
       }
     },
     "rag-knowledge-wiki": {

@@ -112,16 +112,24 @@ saying memory is disabled. No overhead.
 |----------|---------|-------------|
 | `RAG_MCP_MEMORY_BACKEND` | `none` | Backend: `local`, `openviking`, `none` |
 | `RAG_MCP_MEMORY_DIR` | `./.memories` | Local backend storage path |
-| `RAG_MCP_OPENVIKING_URL` | `http://127.0.0.1:1933` | OV server URL |
+| `RAG_MCP_OPENVIKING_URL` | `http://127.0.0.1:1933` | OV server URL (use a host IP for sandbox access) |
 | `RAG_MCP_OPENVIKING_ACCOUNT` | `default` | OV account header |
 | `RAG_MCP_OPENVIKING_USER` | `default` | OV user header |
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OV agent namespace |
+| `RAG_MCP_OPENVIKING_API_KEY` | | OV API key (required for non-localhost / sandbox) |
 
 ## OpenViking "memories only" configuration
 
 When using OV as the memory backend, it operates in reduced mode: no
 resource ingestion, no VLM, no session compression. The agent explicitly
 writes structured memory content via `remember()`.
+
+> **Sandbox note:** When OV must be reachable from a container sandbox,
+> bind to `0.0.0.0` (or the host's real IP) and set `root_api_key` in
+> `ov.conf`. OV enforces API key auth on non-localhost binds. Set
+> `RAG_MCP_OPENVIKING_URL` to the host IP (e.g. `http://10.0.0.7:1933`)
+> and `RAG_MCP_OPENVIKING_API_KEY` to the matching key. The Ollama
+> embedding endpoint must also be reachable from OV at the same IP.
 
 Minimal `ov.conf`:
 
@@ -152,6 +160,43 @@ Key points:
 - **No `vlm` section** — memories are pre-structured text from agent
 - **`auth_mode: "trusted"`** — single-client local setup
 - **Ollama embedding** — free, local, no API key required
+
+### Optional: LLM/VLM for L0/L1 tiered retrieval
+
+Adding a `vlm` section + `auto_generate_l0`/`auto_generate_l1` enables the
+summarizer. Each `remember()` call triggers L0 (~100 tokens) and L1 (~2k
+tokens) generation. Subsequent `recall()` returns compact summaries first,
+expanding to full content (L2) only when needed — saving token budget.
+
+The `vlm` config key accepts any OpenAI-compatible model. The summarizer
+only sends text prompts, so a plain LLM works — vision is only needed for
+multimodal resource ingestion (PDFs, images).
+
+Add to `ov.conf`:
+
+```json
+{
+  "vlm": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b",
+    "api_base": "http://127.0.0.1:11434/v1",
+    "temperature": 0.0,
+    "max_retries": 2
+  },
+  "auto_generate_l0": true,
+  "auto_generate_l1": true
+}
+```
+
+Trade-offs vs memories-only (no generation model):
+
+| | No LLM/VLM | With LLM | With VLM |
+|---|---|---|---|
+| `remember()` latency | ~200ms (embed only) | ~2-5s (embed + summarize) | ~3-8s |
+| `recall()` token efficiency | Returns full content | Returns L0/L1 first | Same |
+| Disk/RAM | ~274MB (nomic-embed) | +4.4GB (qwen2.5:7b) | +4.7GB (llava:7b) |
+| Multimodal resources | No | No | Yes |
+| Use case | Text memories only | Text memories + summaries | Mixed content (images, PDFs) |
 
 ## Degradation model
 

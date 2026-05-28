@@ -144,6 +144,7 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_OPENVIKING_ACCOUNT` | `default` | OpenViking account header |
 | `RAG_MCP_OPENVIKING_USER` | `default` | OpenViking user header |
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
+| `RAG_MCP_OPENVIKING_API_KEY` | | OpenViking API key (required when OV binds to non-localhost for sandbox access) |
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
 subdirectory name becomes a `vector_store_id`. Works with `.adoc`, `.md`, `.rst`, `.txt`.

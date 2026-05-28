@@ -26,15 +26,18 @@ class OpenVikingMemoryBackend:
         account: str = "default",
         user: str = "developer",
         agent_id: str = "rag-mcp-server",
+        api_key: str = "",
     ) -> None:
         self._url = url.rstrip("/")
         self._account = account
         self._user = user
         self._agent_id = agent_id
-        self._headers = {
+        self._headers: dict[str, str] = {
             "X-OpenViking-Account": account,
             "X-OpenViking-User": user,
         }
+        if api_key:
+            self._headers["X-API-Key"] = api_key
 
     def _memory_prefix(self) -> str:
         return f"viking://user/{self._user}/memories"

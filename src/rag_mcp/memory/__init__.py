@@ -63,6 +63,7 @@ def get_memory_backend(config: ServerConfig) -> MemoryProtocol | None:
             account=config.openviking_account,
             user=config.openviking_user,
             agent_id=config.openviking_agent_id,
+            api_key=config.openviking_api_key,
         )
 
     raise ValueError(f"Unknown memory backend: {config.memory_backend!r}")

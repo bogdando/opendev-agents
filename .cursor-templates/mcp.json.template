@@ -9,7 +9,8 @@
         "RAG_MCP_OPENVIKING_URL": "http://127.0.0.1:1933",
         "RAG_MCP_OPENVIKING_ACCOUNT": "default",
         "RAG_MCP_OPENVIKING_USER": "default",
-        "RAG_MCP_OPENVIKING_AGENT_ID": "rag-mcp-server"
+        "RAG_MCP_OPENVIKING_AGENT_ID": "rag-mcp-server",
+        "RAG_MCP_OPENVIKING_API_KEY": ""
       }
     },
     "rag-knowledge-wiki": {

@@ -66,6 +66,7 @@ class ServerConfig(BaseSettings):
     openviking_account: str = "default"
     openviking_user: str = "default"
     openviking_agent_id: str = "rag-mcp-server"
+    openviking_api_key: str = ""
 
     @property
     def effective_server_name(self) -> str:

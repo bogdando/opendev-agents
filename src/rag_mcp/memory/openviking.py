@@ -54,7 +54,7 @@ class OpenVikingMemoryBackend:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
                 resp = await client.post(
                     f"{self._url}/api/v1/search/search",
                     json=payload,
@@ -87,7 +87,7 @@ class OpenVikingMemoryBackend:
     async def _read_content(self, uri: str) -> str:
         """Fetch the actual content of a memory file from OV."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
                 resp = await client.get(
                     f"{self._url}/api/v1/content/read",
                     params={"uri": uri},
@@ -127,7 +127,7 @@ class OpenVikingMemoryBackend:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, http2=True) as client:
                 resp = await client.post(
                     f"{self._url}/api/v1/content/write",
                     json=payload,
@@ -161,7 +161,7 @@ class OpenVikingMemoryBackend:
         params = {"path": list_path}
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
                 resp = await client.get(
                     f"{self._url}/api/v1/fs/ls",
                     params=params,

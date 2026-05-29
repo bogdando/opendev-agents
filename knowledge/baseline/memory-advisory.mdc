@@ -6,7 +6,11 @@ globs: []
 
 @@RECALL: MANDATORY At the start of each session, always call recall(query=...) with
 your current task context to retrieve relevant memories from past
-sessions. This helps maintain continuity across conversations.
+sessions. Also always recall the how-tos when you cannot locate a resource
+(like a repo, file, URL), or when you misused API call paremters, or a tool command
+line arguments, or a system path - always call recall(query=...) with the
+tool/service API endpoint, lookup/searching, parameters/arguments specifics
+added brief context.
 
 @@REMEMBER: MANDATORY When the user explicitly states a preference, makes a
 significant architectural decision, corrects you, or confirms a

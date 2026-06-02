@@ -1,63 +1,19 @@
-"""FastMCP application instance and lifespan management."""
+"""Conditional tool registration and public re-exports.
+
+The `mcp` instance and lifespan live in `_app.py` (zero circular deps).
+This module imports the search tool unconditionally, and imports
+memory tools only when a memory backend is configured — eliminating
+the race condition where Cursor's tool discovery could miss `search`.
+"""
 
 from __future__ import annotations
 
-import logging
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from rag_mcp._app import AppContext, get_app_context, init_config, mcp  # noqa: F401
 
-try:
-    from fastmcp import Context, FastMCP
-except ImportError:
-    from mcp.server.fastmcp import Context, FastMCP
+# --- Tool registration (order matters for Cursor discovery) ---
+# 1. search — ALWAYS available, core functionality
+import rag_mcp.tools  # noqa: F401, E402
 
-from rag_mcp.backends import BackendProtocol, get_backend
-from rag_mcp.config import ServerConfig
-from rag_mcp.memory import MemoryProtocol, get_memory_backend
-
-logger = logging.getLogger(__name__)
-
-_server_config: ServerConfig | None = None
-
-
-@dataclass
-class AppContext:
-    backend: BackendProtocol
-    config: ServerConfig
-    memory: MemoryProtocol | None = None
-
-
-@asynccontextmanager
-async def _app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
-    config = _server_config or ServerConfig()
-    backend = get_backend(config)
-    memory = get_memory_backend(config)
-    logger.info(
-        "RAG MCP server ready  name=%s  backend=%s  memory=%s",
-        config.effective_server_name,
-        config.backend,
-        config.memory_backend,
-    )
-    yield {"app": AppContext(backend=backend, config=config, memory=memory)}
-
-
-def get_app_context(ctx: Context) -> AppContext:
-    """Retrieve the AppContext from a tool invocation context."""
-    return ctx.request_context.lifespan_context["app"]
-
-
-_init_config = ServerConfig()
-
-mcp = FastMCP(
-    _init_config.effective_server_name,
-    instructions=(
-        "Search external knowledge bases (OpenStack docs, project specs, "
-        "deployment guides) to augment your answers. Use the search tool "
-        "to retrieve relevant documentation before responding."
-    ),
-    lifespan=_app_lifespan,
-)
-
-import rag_mcp.tools as _tools  # noqa: F401, E402
-import rag_mcp.memory_tools as _memory_tools  # noqa: F401, E402
+# 2. recall/remember — only when a memory backend is active
+if init_config.memory_backend != "none":
+    import rag_mcp.memory_tools  # noqa: F401, E402

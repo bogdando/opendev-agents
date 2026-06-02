@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-try:
-    from fastmcp import Context
-except ImportError:
-    from mcp.server.fastmcp import Context
-
+from rag_mcp._app import Context, get_app_context, init_config, mcp
 from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.formatting import format_results
-from rag_mcp.server import get_app_context, mcp
+
+_search_name = f"{init_config.effective_server_name.replace('-', '_')}_search"
 
 
-@mcp.tool()
+@mcp.tool(name=_search_name)
 async def search(
     ctx: Context,
     query: str,
@@ -119,7 +116,8 @@ async def list_knowledge_stores(ctx: Context) -> str:
 
     Level 1 of progressive discovery: returns store IDs, names,
     access level, and freshness so the agent can decide which
-    store to inspect or search.
+    store to inspect or search.  Also includes the search tool
+    name so consumers know exactly what to call.
     """
     app = get_app_context(ctx)
     stores = await app.backend.list_stores()
@@ -127,7 +125,10 @@ async def list_knowledge_stores(ctx: Context) -> str:
     if not stores:
         return "No knowledge stores configured."
 
-    lines: list[str] = ["# Available Knowledge Stores\n"]
+    lines: list[str] = [
+        "# Available Knowledge Stores\n",
+        f"**Search tool**: `{_search_name}`\n",
+    ]
     for s in stores:
         lines.append(f"## {s['name']}")
         lines.append(f"- **Store ID**: `{s['id']}`")

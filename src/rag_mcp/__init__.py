@@ -35,11 +35,11 @@ def _resolve_ssl_cert_file() -> None:
 
 def main() -> None:
     """Entry point: parse config, configure logging, start the MCP server."""
-    from rag_mcp import server as _server
+    from rag_mcp import _app
 
     _resolve_ssl_cert_file()
     config = ServerConfig()
-    _server._server_config = config
+    _app._server_config = config
 
     logging.basicConfig(
         level=getattr(logging, config.log_level.upper(), logging.INFO),

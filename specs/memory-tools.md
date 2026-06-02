@@ -7,6 +7,11 @@ Designed as the portable fallback (Path 2) for environments where
 OpenViking's hook-based transparent memory is unavailable (i.e., any MCP
 client other than Claude Code).
 
+**Tool naming**: All tool names are prefixed by the server identity
+(dashes → underscores) to avoid collisions between multiple instances.
+For example: `rag_knowledge_recall`, `rag_knowledge_remember`,
+`rag_knowledge_search`, `rag_knowledge_wiki_search`.
+
 ## Architecture
 
 ```mermaid

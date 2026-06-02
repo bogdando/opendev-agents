@@ -245,8 +245,11 @@ connected as a local `nova-dev` store.
 
 ### Cross-session memory
 
-The server exposes optional `recall()` and `remember()` MCP tools for
-cross-session memory management. Disabled by default (`RAG_MCP_MEMORY_BACKEND=none`).
+The server exposes optional `<prefix>_recall` and `<prefix>_remember` MCP
+tools for cross-session memory management (e.g. `rag_knowledge_recall`,
+`rag_knowledge_remember` for the default instance). Tool names are prefixed
+by the server identity to avoid collisions when multiple instances run.
+Disabled by default (`RAG_MCP_MEMORY_BACKEND=none`).
 
 Enable the local file backend (zero infrastructure, keyword search):
 

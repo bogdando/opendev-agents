@@ -16,8 +16,7 @@ significant architectural decision, corrects you, or confirms a
 successful multi-step procedure, or when your (agent's) issued tool command
 succeeds with expected results, call <prefix>_remember(content=<memories>,
 category=...). To discover tool prefix read knowledge://stores from
-mock backend (default rag_knowledge).
-Memories categories:
+mock backend (default rag_knowledge). Memories categories:
 - preference: coding style, tool choices, naming conventions
 - decision: architectural choices, tech stack selections
 - learning: project-specific knowledge you discovered

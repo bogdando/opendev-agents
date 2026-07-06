@@ -14,7 +14,7 @@ import logging
 import httpx
 
 from okp_mcp.content import doc_uri  # pyright: ignore[reportMissingImports]
-from okp_mcp.formatting import _annotate_result  # pyright: ignore[reportMissingImports]
+from okp_mcp.formatting import annotate_result  # pyright: ignore[reportMissingImports]
 from okp_mcp.solr import _clean_query, _solr_query  # pyright: ignore[reportMissingImports]
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ class SolrBackend:
             if isinstance(content, list):
                 content = "\n".join(content)
 
-            annotations, applicability, _sort_key = _annotate_result(
+            annotations, applicability, _sort_key = annotate_result(
                 title, hl_text, content,
                 product=doc.get("product", ""),
             )

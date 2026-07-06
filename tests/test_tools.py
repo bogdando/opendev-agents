@@ -143,6 +143,7 @@ class TestSearchHintIntegration(unittest.TestCase):
 
         mock_config = mock.MagicMock()
         mock_config.max_response_chars = 50000
+        mock_config.png_wrap = False
 
         mock_app = mock.MagicMock()
         mock_app.backend = mock_backend
@@ -264,6 +265,97 @@ class TestRecoveryHintsFormat(unittest.TestCase):
         self.assertEqual("**Suggestions**:", lines[2])
         for line in lines[3:]:
             self.assertTrue(line.startswith("- "), f"Expected bullet: {line!r}")
+
+
+class TestSearchPngWrap(unittest.TestCase):
+    """Test that search() returns Image objects when png_wrap=True."""
+
+    def _run_search_png(self, query, results, stores=None):
+        if stores is None:
+            stores = [{"id": "docs", "description": "Test store"}]
+        mock_backend = mock.AsyncMock()
+        mock_backend.list_stores.return_value = stores
+        mock_backend.search.return_value = results
+
+        mock_config = mock.MagicMock()
+        mock_config.max_response_chars = 50000
+        mock_config.png_wrap = True
+
+        mock_app = mock.MagicMock()
+        mock_app.backend = mock_backend
+        mock_app.config = mock_config
+
+        mock_ctx = mock.MagicMock()
+
+        fake_image = mock.MagicMock()
+        fake_wrap = mock.MagicMock(return_value=[fake_image])
+
+        with mock.patch(
+            "rag_mcp.tools.get_app_context",
+            autospec=True,
+            return_value=mock_app,
+        ), mock.patch.dict(
+            "sys.modules",
+            {"rag_mcp.png_wrap": mock.MagicMock(wrap_as_images=fake_wrap)},
+        ):
+            return asyncio.run(search(mock_ctx, query, "docs"))
+
+    def test_returns_list_when_png_wrap_enabled(self):
+        results = [_make_result(text="some content here")]
+        out = self._run_search_png("content", results)
+        self.assertIsInstance(out, list)
+        self.assertGreater(len(out), 0)
+
+    def test_no_results_still_returns_string(self):
+        """Recovery hints are plain text even when png_wrap is on."""
+        mock_backend = mock.AsyncMock()
+        mock_backend.list_stores.return_value = [
+            {"id": "docs", "description": "Test"},
+        ]
+        mock_backend.search.return_value = []
+
+        mock_config = mock.MagicMock()
+        mock_config.max_response_chars = 50000
+        mock_config.png_wrap = True
+
+        mock_app = mock.MagicMock()
+        mock_app.backend = mock_backend
+        mock_app.config = mock_config
+        mock_ctx = mock.MagicMock()
+
+        with mock.patch(
+            "rag_mcp.tools.get_app_context",
+            autospec=True,
+            return_value=mock_app,
+        ):
+            out = asyncio.run(search(mock_ctx, "xyzzy", "docs"))
+        self.assertIsInstance(out, str)
+        self.assertIn("No results found", out)
+
+    def test_unknown_store_still_returns_string(self):
+        """Error messages stay as text regardless of png_wrap."""
+        mock_backend = mock.AsyncMock()
+        mock_backend.list_stores.return_value = [
+            {"id": "docs", "description": "Test"},
+        ]
+
+        mock_config = mock.MagicMock()
+        mock_config.max_response_chars = 50000
+        mock_config.png_wrap = True
+
+        mock_app = mock.MagicMock()
+        mock_app.backend = mock_backend
+        mock_app.config = mock_config
+        mock_ctx = mock.MagicMock()
+
+        with mock.patch(
+            "rag_mcp.tools.get_app_context",
+            autospec=True,
+            return_value=mock_app,
+        ):
+            out = asyncio.run(search(mock_ctx, "q", "nonexistent"))
+        self.assertIsInstance(out, str)
+        self.assertIn("Unknown store", out)
 
 
 if __name__ == "__main__":

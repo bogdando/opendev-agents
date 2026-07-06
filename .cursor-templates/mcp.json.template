@@ -5,6 +5,7 @@
       "env": {
         "RAG_MCP_BACKEND": "mock",
         "RAG_MCP_KNOWLEDGE_DIR": "/opt/go/src/github.com/bogdando/opendev-agents/knowledge",
+        "RAG_MCP_PNG_WRAP": "${RAG_MCP_PNG_WRAP}",
         "RAG_MCP_MEMORY_BACKEND": "openviking",
         "RAG_MCP_OPENVIKING_URL": "http://127.0.0.1:1933",
         "RAG_MCP_OPENVIKING_ACCOUNT": "default",
@@ -20,6 +21,7 @@
       "env": {
         "RAG_MCP_SERVER_NAME": "rag-knowledge-wiki",
         "RAG_MCP_BACKEND": "confluence",
+        "RAG_MCP_PNG_WRAP": "${RAG_MCP_PNG_WRAP}",
         "RAG_MCP_CONFLUENCE_URL": "${CONFLUENCEURL}",
         "RAG_MCP_CONFLUENCE_EMAIL": "${CONFLUENCEEMAIL}",
         "RAG_MCP_CONFLUENCE_TOKEN": "${CONFLUENCETOKEN}",
@@ -31,6 +33,7 @@
       "env": {
         "RAG_MCP_SERVER_NAME": "rag-knowledge-okp",
         "RAG_MCP_BACKEND": "solr",
+        "RAG_MCP_PNG_WRAP": "${RAG_MCP_PNG_WRAP}",
         "RAG_MCP_SOLR_URL": "${OKPSOLRURL}",
         "SSL_CERT_FILE": "/etc/pki/tls/certs/ca-bundle.crt",
         "SSL_CERT_FILE_ALT": "${OKPSSLCERTFILE}",

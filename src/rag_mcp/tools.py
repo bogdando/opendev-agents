@@ -15,13 +15,17 @@ async def search(
     query: str,
     vector_store_id: str,
     top_k: int = 5,
-) -> str:
+):
     """Search a knowledge base for relevant documentation.
 
     Returns formatted markdown with source attribution that can be
-    injected directly into the conversation context.  When no results
-    are found, returns recovery hints with suggested broader terms
-    and alternative stores.
+    injected directly into the conversation context.  When PNG wrap
+    mode is enabled (RAG_MCP_PNG_WRAP=true), results are returned as
+    768x768 PNG image frames for dense context transfer (best
+    results for input and completion tokens with GPT 5.x models).
+
+    When no results are found, returns recovery hints with suggested
+    broader terms and alternative stores.
 
     Args:
         query: Natural language search query.
@@ -60,6 +64,9 @@ async def search(
                 " Results above matched only the"
                 " other query terms."
             )
+        if app.config.png_wrap:
+            from rag_mcp.png_wrap import wrap_as_images
+            return wrap_as_images(formatted)
         return formatted
 
     return _build_recovery_hints(query, vector_store_id, stores)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +62,15 @@ class ServerConfig(BaseSettings):
     png_wrap: bool = Field(default=False)
     png_max_pages: int = Field(default=3, ge=1)
     png_max_chars_per_store: int = Field(default=4500, ge=100)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _empty_str_to_default(cls, values: dict) -> dict:
+        """Treat empty-string env vars as unset so field defaults apply."""
+        for name, field_info in cls.model_fields.items():
+            if name in values and values[name] == "":
+                values[name] = field_info.default
+        return values
 
     memory_backend: Literal["local", "openviking", "none"] = "none"
     memory_dir: str = "./.memories"

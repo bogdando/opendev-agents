@@ -82,6 +82,74 @@ class TestServerConfig(unittest.TestCase):
         self.assertEqual("custom-rag", cfg.effective_server_name)
 
 
+class TestEmptyEnvFallback(unittest.TestCase):
+    """Empty-string env vars fall back to field defaults."""
+
+    def test_empty_int_fields_use_defaults(self):
+        env = {
+            "RAG_MCP_PORT": "",
+            "RAG_MCP_MAX_RESPONSE_CHARS": "",
+            "RAG_MCP_PNG_MAX_PAGES": "",
+            "RAG_MCP_PNG_MAX_CHARS_PER_STORE": "",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual(8000, cfg.port)
+        self.assertEqual(30000, cfg.max_response_chars)
+        self.assertEqual(3, cfg.png_max_pages)
+        self.assertEqual(4500, cfg.png_max_chars_per_store)
+
+    def test_empty_str_fields_use_defaults(self):
+        env = {
+            "RAG_MCP_TRANSPORT": "",
+            "RAG_MCP_BACKEND": "",
+            "RAG_MCP_LOG_LEVEL": "",
+            "RAG_MCP_KNOWLEDGE_DIR": "",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual("stdio", cfg.transport)
+        self.assertEqual("mock", cfg.backend)
+        self.assertEqual("INFO", cfg.log_level)
+        self.assertEqual("./knowledge", cfg.knowledge_dir)
+
+    def test_empty_bool_field_uses_default(self):
+        env = {"RAG_MCP_PNG_WRAP": ""}
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertFalse(cfg.png_wrap)
+
+    def test_explicit_values_override_defaults(self):
+        env = {
+            "RAG_MCP_PORT": "9090",
+            "RAG_MCP_BACKEND": "solr",
+            "RAG_MCP_PNG_MAX_PAGES": "5",
+            "RAG_MCP_PNG_MAX_CHARS_PER_STORE": "6000",
+            "RAG_MCP_PNG_WRAP": "true",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual(9090, cfg.port)
+        self.assertEqual("solr", cfg.backend)
+        self.assertEqual(5, cfg.png_max_pages)
+        self.assertEqual(6000, cfg.png_max_chars_per_store)
+        self.assertTrue(cfg.png_wrap)
+
+    def test_mixed_empty_and_explicit(self):
+        env = {
+            "RAG_MCP_PORT": "",
+            "RAG_MCP_BACKEND": "confluence",
+            "RAG_MCP_PNG_MAX_PAGES": "",
+            "RAG_MCP_PNG_MAX_CHARS_PER_STORE": "8000",
+        }
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertEqual(8000, cfg.port)
+        self.assertEqual("confluence", cfg.backend)
+        self.assertEqual(3, cfg.png_max_pages)
+        self.assertEqual(8000, cfg.png_max_chars_per_store)
+
+
 class TestBackendFactory(unittest.TestCase):
 
     def test_mock_backend(self):

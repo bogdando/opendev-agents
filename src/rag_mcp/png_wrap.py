@@ -137,12 +137,24 @@ def _empty_frame() -> bytes:
     return buf.getvalue()
 
 
-def wrap_as_images(text: str) -> list["Image"]:
-    """Convert text into a list of FastMCP Image objects (PNG frames)."""
+def estimate_chars_per_frame() -> int:
+    """Estimate how many characters fit in one frame after minification."""
+    font = _get_font()
+    line_h = _measure_line_height(font)
+    wrap_width = _wrap_char_width(font)
+    lines_per_frame = max(1, _USABLE_HEIGHT // line_h)
+    return lines_per_frame * wrap_width
+
+
+def wrap_as_images(text: str, *, max_pages: int = 3) -> list["Image"]:
+    """Convert text into a list of FastMCP Image objects (PNG frames).
+
+    Truncates output to *max_pages* frames to bound vision-token cost.
+    """
     try:
         from fastmcp.utilities.types import Image
     except ImportError:
         from mcp.server.fastmcp.utilities.types import Image
 
-    frames = text_to_png_frames(text)
+    frames = text_to_png_frames(text)[:max_pages]
     return [Image(data=frame, format="png") for frame in frames]

@@ -60,6 +60,7 @@ class ServerConfig(BaseSettings):
     )
     max_response_chars: int = Field(default=30000, ge=1)
     png_wrap: bool = Field(default=False)
+    png_max_pages: int = Field(default=3, ge=1)
 
     memory_backend: Literal["local", "openviking", "none"] = "none"
     memory_dir: str = "./.memories"

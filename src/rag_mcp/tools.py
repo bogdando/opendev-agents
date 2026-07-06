@@ -51,9 +51,13 @@ async def search(
     results = await app.backend.search(query, vector_store_id, top_k)
 
     if results:
-        formatted = format_results(
-            results, app.config.max_response_chars
-        )
+        if app.config.png_wrap:
+            from rag_mcp.png_wrap import estimate_chars_per_frame, wrap_as_images
+            budget = estimate_chars_per_frame() * app.config.png_max_pages
+        else:
+            budget = app.config.max_response_chars
+
+        formatted = format_results(results, budget)
         unmatched = _find_unmatched_terms(query, results)
         if unmatched:
             terms = ", ".join(f'"{t}"' for t in unmatched)
@@ -65,8 +69,7 @@ async def search(
                 " other query terms."
             )
         if app.config.png_wrap:
-            from rag_mcp.png_wrap import wrap_as_images
-            return wrap_as_images(formatted)
+            return wrap_as_images(formatted, max_pages=app.config.png_max_pages)
         return formatted
 
     return _build_recovery_hints(query, vector_store_id, stores)

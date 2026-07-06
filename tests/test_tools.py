@@ -280,7 +280,8 @@ class TestSearchPngWrap(unittest.TestCase):
         mock_config = mock.MagicMock()
         mock_config.max_response_chars = 50000
         mock_config.png_wrap = True
-        mock_config.png_max_pages = 2
+        mock_config.png_max_pages = 3
+        mock_config.png_max_chars_per_store = 4500
 
         mock_app = mock.MagicMock()
         mock_app.backend = mock_backend
@@ -290,11 +291,9 @@ class TestSearchPngWrap(unittest.TestCase):
 
         fake_image = mock.MagicMock()
         fake_wrap = mock.MagicMock(return_value=[fake_image])
-        fake_estimate = mock.MagicMock(return_value=4500)
 
         fake_png_mod = mock.MagicMock(
             wrap_as_images=fake_wrap,
-            estimate_chars_per_frame=fake_estimate,
         )
 
         with mock.patch(

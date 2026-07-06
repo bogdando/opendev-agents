@@ -131,7 +131,10 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`) |
 | `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
 | `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `MYTEAM,MYPROJECT` (or `CONFLUENCESPACE`) |
-| `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
+| `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted text output |
+| `RAG_MCP_PNG_WRAP` | `false` | Return search results as 1568x1568 PNG image frames instead of text |
+| `RAG_MCP_PNG_MAX_PAGES` | `3` | Max PNG frames per search response (safety cap) |
+| `RAG_MCP_PNG_MAX_CHARS_PER_STORE` | `4500` | Character budget per store search when PNG wrap is on |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
 | `RAG_MCP_LOG_LEVEL` | `INFO` | Set to `DEBUG` to log Confluence CQL and result counts |

@@ -21,8 +21,12 @@ async def search(
     Returns formatted markdown with source attribution that can be
     injected directly into the conversation context.  When PNG wrap
     mode is enabled (RAG_MCP_PNG_WRAP=true), results are returned as
-    768x768 PNG image frames for dense context transfer (best
-    results for input and completion tokens with GPT 5.x models).
+    1568x1568 PNG image frames for dense context transfer.
+
+    When PNG wrap is active, results from each store are capped at
+    RAG_MCP_PNG_MAX_CHARS_PER_STORE characters (default 4500) to
+    control vision-token cost per call.  Search multiple stores in
+    separate calls to gather broader context across sources.
 
     When no results are found, returns recovery hints with suggested
     broader terms and alternative stores.
@@ -52,8 +56,8 @@ async def search(
 
     if results:
         if app.config.png_wrap:
-            from rag_mcp.png_wrap import estimate_chars_per_frame, wrap_as_images
-            budget = estimate_chars_per_frame() * app.config.png_max_pages
+            from rag_mcp.png_wrap import wrap_as_images
+            budget = app.config.png_max_chars_per_store
         else:
             budget = app.config.max_response_chars
 

@@ -53,44 +53,38 @@ class SolrBackend:
             solr_endpoint=self._solr_endpoint,
         )
 
-        docs = data.get("response", {}).get("docs", [])
+        docs = data.response.docs
         if not docs:
             return []
 
-        max_score = data.get("response", {}).get(
-            "maxScore", 1.0
-        ) or 1.0
+        raw_scores = [doc.score for doc in docs if doc.score is not None]
+        max_score = max(raw_scores, default=1.0) or 1.0
 
-        highlights = data.get("highlighting", {})
+        highlights = data.highlighting
 
         results: list[dict] = []
         for doc in docs:
             title = (
-                doc.get("allTitle")
-                or doc.get("heading_h1")
-                or doc.get("title", "").split("|")[0].strip()
+                doc.allTitle
+                or (doc.heading_h1[0] if doc.heading_h1 else "")
+                or doc.title.split("|")[0].strip()
                 or "Untitled"
             )
-            if isinstance(title, list):
-                title = title[0]
 
-            doc_id = doc.get("id", "")
-            hl_snippets = highlights.get(doc_id, {}).get(
+            hl_snippets = highlights.get(doc.id, {}).get(
                 "main_content", []
             )
             hl_text = "\n".join(hl_snippets) if hl_snippets else ""
-            content = doc.get("main_content", "")
-            if isinstance(content, list):
-                content = "\n".join(content)
+            content = doc.main_content
 
             annotations, applicability, _sort_key = annotate_result(
                 title, hl_text, content,
-                product=doc.get("product", ""),
+                product=doc.product,
             )
 
             parts: list[str] = [f"**{title}**"]
             parts.append(
-                f"Type: {doc.get('documentKind', 'Unknown')}"
+                f"Type: {doc.documentKind or 'Unknown'}"
             )
             if applicability:
                 parts.append(f"Applicability: {applicability}")
@@ -98,23 +92,23 @@ class SolrBackend:
             parts.append(
                 f"URL: https://access.redhat.com{url_path}"
             )
-            if doc.get("lastModifiedDate"):
+            if doc.lastModifiedDate:
                 parts.append(
-                    f"Last updated: {doc['lastModifiedDate']}"
+                    f"Last updated: {doc.lastModifiedDate}"
                 )
             if annotations:
                 parts.extend(annotations)
             if hl_text:
                 parts.append(f"Content: {hl_text[:3000]}")
-            elif doc.get("portal_synopsis"):
+            elif doc.portal_synopsis:
                 parts.append(
-                    f"Content: {doc['portal_synopsis']}"
+                    f"Content: {doc.portal_synopsis}"
                 )
             elif content:
                 parts.append(f"Content: {content[:3000]}")
 
             formatted_text = "\n".join(parts)
-            raw_score = doc.get("score", 0.0)
+            raw_score = doc.score or 0.0
             results.append(
                 {
                     "text": formatted_text,
@@ -125,8 +119,8 @@ class SolrBackend:
                     "metadata": {
                         "title": title,
                         "store_id": store_id,
-                        "doc_kind": doc.get("documentKind", ""),
-                        "product": doc.get("product", ""),
+                        "doc_kind": doc.documentKind,
+                        "product": doc.product,
                     },
                 }
             )

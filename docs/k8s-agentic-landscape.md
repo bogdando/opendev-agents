@@ -1,6 +1,10 @@
 # Kubernetes Agentic Tooling Landscape
 
 > **Status**: Analysis - reference document.
+>
+> **Update (July 2026)**: Kagenti is deprecated - OpenShell replaces it
+> for agent sandboxing, identity and lifecycle management. References to
+> Kagenti below are kept for historical context only.
 
 ## Scope
 
@@ -71,7 +75,7 @@ agents and `rag-mcp-server`. Instead of agents connecting directly to
 calls to the appropriate backend. This adds auth, rate limiting, and
 observability without changing `rag-mcp-server` code.
 
-### Kagenti Operator
+### Kagenti Operator (DEPRECATED)
 
 A Kubernetes operator for deploying, discovering, and securing AI
 agents as K8s workloads.

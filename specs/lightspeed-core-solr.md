@@ -1,6 +1,10 @@
 # Lightspeed-Core Solr Integration for Agentic SDLC
 
 > **Status**: Proposal - not yet implemented.
+>
+> **Note:** Option C (external embeddings via thin HTTP client) is now
+> specified in [`embedding-client.md`](embedding-client.md). This spec
+> retains the broader landscape analysis and Options A/B/D.
 
 ## Current state
 

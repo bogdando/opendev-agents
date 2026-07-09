@@ -21,9 +21,9 @@ knowledge retrieval approaches;
 maintain instructional consistency over extended sessions;
 * [Kubernetes agentic landscape](docs/k8s-agentic-landscape.md) and
 [OpenViking comparison](docs/openviking-comparison.md) for the future vision of
-autonomous ASDLC — where sandbox runtimes, MCP gateways, agent identity, and
-context databases compose into a fully autonomous toolchain (the current state
-is human-driven, AI-assisted SDLC).
+autonomous ASDLC — where sandbox runtimes (OpenShell), MCP gateways, agent
+identity, and context databases compose into a fully autonomous toolchain (the
+current state is human-driven, AI-assisted SDLC).
 
 Applying for Cursor agent/IDE etc
 =================================

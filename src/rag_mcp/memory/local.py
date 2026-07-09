@@ -2,7 +2,8 @@
 
 Memories are stored as markdown files with YAML frontmatter under a
 configurable directory, organized by category. Recall uses keyword
-overlap scoring (same approach as MockBackend for knowledge search).
+overlap scoring, enhanced with embedding-based multi-query expansion
+and reranking when an EmbeddingClient is available.
 """
 
 from __future__ import annotations
@@ -11,11 +12,15 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.memory import VALID_CATEGORIES
+
+if TYPE_CHECKING:
+    from rag_mcp.embeddings import EmbeddingClient
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +39,11 @@ class LocalMemoryBackend:
         return d
 
     async def recall(
-        self, query: str, category: str = "", top_k: int = 5
+        self, query: str, category: str = "", top_k: int = 5, **kwargs
     ) -> list[dict]:
-        """Find memories matching query by keyword overlap."""
+        """Find memories matching query, with optional embedding reranking."""
+        embeddings: EmbeddingClient | None = kwargs.get("embeddings")
+
         if not self._root.exists():
             return []
 
@@ -44,6 +51,23 @@ class LocalMemoryBackend:
         if not memories:
             return []
 
+        if embeddings:
+            candidates = self._multi_query_gather(
+                query, memories, category, top_k * 3
+            )
+            if candidates:
+                reranked = await self._rerank_with_embeddings(
+                    candidates, query, embeddings
+                )
+                if reranked is not None:
+                    return reranked[:top_k]
+
+        return self._keyword_recall(query, memories, top_k)
+
+    def _keyword_recall(
+        self, query: str, memories: list[dict], top_k: int
+    ) -> list[dict]:
+        """Original keyword overlap scoring."""
         keywords = [
             t
             for t in query.lower().split()
@@ -62,6 +86,64 @@ class LocalMemoryBackend:
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [m for _, m in scored[:top_k]]
+
+    def _multi_query_gather(
+        self,
+        query: str,
+        memories: list[dict],
+        category: str,
+        pool_size: int,
+    ) -> list[dict]:
+        """Gather candidates via multiple query variants."""
+        candidates_by_uri: dict[str, dict] = {}
+
+        for result in self._keyword_recall(query, memories, pool_size):
+            candidates_by_uri[result["uri"]] = result
+
+        keywords = [
+            t
+            for t in query.lower().split()
+            if t not in SEARCH_STOP_WORDS and len(t) > 2
+        ]
+        if len(keywords) >= 3:
+            for kw in keywords:
+                for result in self._keyword_recall(kw, memories, pool_size):
+                    if result["uri"] not in candidates_by_uri:
+                        candidates_by_uri[result["uri"]] = result
+
+        if not category:
+            all_memories = self._load_all("")
+            if len(all_memories) > len(memories):
+                for result in self._keyword_recall(query, all_memories, pool_size):
+                    if result["uri"] not in candidates_by_uri:
+                        candidates_by_uri[result["uri"]] = result
+
+        return list(candidates_by_uri.values())
+
+    async def _rerank_with_embeddings(
+        self, candidates: list[dict], query: str, embeddings: "EmbeddingClient"
+    ) -> list[dict] | None:
+        """Rerank candidates by cosine similarity to the query embedding."""
+        from rag_mcp.embeddings import cosine_similarity
+
+        q_vec = await embeddings.embed_query(query)
+        if q_vec is None:
+            return None
+
+        texts = [c["content"][:2000] for c in candidates]
+        doc_vecs = await embeddings.embed(texts)
+        if doc_vecs is None:
+            return None
+
+        for candidate, d_vec in zip(candidates, doc_vecs):
+            candidate["_score"] = cosine_similarity(q_vec, d_vec)
+
+        candidates.sort(key=lambda c: c.get("_score", 0), reverse=True)
+
+        for c in candidates:
+            c.pop("_score", None)
+
+        return candidates
 
     async def remember(
         self, content: str, category: str = "context"

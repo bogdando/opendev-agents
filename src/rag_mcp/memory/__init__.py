@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from rag_mcp.config import ServerConfig
@@ -16,7 +16,7 @@ class MemoryProtocol(Protocol):
     """
 
     async def recall(
-        self, query: str, category: str = "", top_k: int = 5
+        self, query: str, category: str = "", top_k: int = 5, **kwargs: Any
     ) -> list[dict]:
         """Find memories relevant to the query.
 

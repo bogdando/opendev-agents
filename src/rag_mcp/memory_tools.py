@@ -36,7 +36,9 @@ async def recall(
         cats = ", ".join(sorted(VALID_CATEGORIES))
         return f'Unknown category "{category}". Valid: {cats}'
 
-    memories = await app.memory.recall(query, category=category, top_k=top_k)
+    memories = await app.memory.recall(
+        query, category=category, top_k=top_k, embeddings=app.embeddings,
+    )
 
     if not memories:
         hint = f' in category "{category}"' if category else ""

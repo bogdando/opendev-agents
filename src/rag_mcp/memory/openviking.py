@@ -43,7 +43,7 @@ class OpenVikingMemoryBackend:
         return f"viking://user/{self._user}/memories"
 
     async def recall(
-        self, query: str, category: str = "", top_k: int = 5
+        self, query: str, category: str = "", top_k: int = 5, **kwargs
     ) -> list[dict]:
         """Semantic search over stored memories via OV's search API."""
         target_uri = self._memory_prefix()

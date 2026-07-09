@@ -1,3 +1,6 @@
+Rules System
+============
+
 This aggregates and merges the AGENTS/CLAUDE sources:
 * [stephenfin/openstack-agentsmd](https://github.com/stephenfin/openstack-agentsmd/blob/main/AGENTS.md)
 * [SeanMooney/openstack-ai-style-guide](https://github.com/SeanMooney/openstack-ai-style-guide/blob/master/docs/comprehensive-guide.md)
@@ -6,27 +9,7 @@ and skills:
 * [gthiemonge/openstack-review-claude-skill](https://github.com/gthiemonge/openstack-review-claude-skill) (in-tree)
 * A referenced fork of [melwitt/nova-spec-summarizer](https://github.com/melwitt/nova-spec-summarizer)
 
-The effort also goes [slightly beyond](./HUMANS.md) that by making an attempt of defining
-[agent-agnostic](docs/agent-agnostic-approach.md) REST-like frameworks, and integrating with external knowledge systems. The purpose of which is de-duplicating rules for projects and libs,
-reducing the tokens burn-rates in each prompt, separating upstream guidelines from downstream specifics, giving subagent personas a better SME context, and the like.
-
-In [config-install](docs/config-install.md) see an example approach for declarative
-configuration and delivery into worspace targets (projects repositories) of locally
-provided and external knowledge stores, skills, rules, and more to that.
-
-See also my further ideas for brain storming topics for:
-* [search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
-knowledge retrieval approaches;
-* [long-running subagents](docs/long-running-subagents.md) for how deep agents
-maintain instructional consistency over extended sessions;
-* [Kubernetes agentic landscape](docs/k8s-agentic-landscape.md) and
-[OpenViking comparison](docs/openviking-comparison.md) for the future vision of
-autonomous ASDLC — where sandbox runtimes (OpenShell), MCP gateways, agent
-identity, and context databases compose into a fully autonomous toolchain (the
-current state is human-driven, AI-assisted SDLC).
-
-Applying for Cursor agent/IDE etc
-=================================
+### Cursor agent/IDE vs Other Tools
 
 This repo ships decomposed `.cursor/rules/*.mdc` files from a snapshot of the given
 above sources that works only in Cursor. For Claude Code and other agentic tools, there is
@@ -89,15 +72,41 @@ the `rag-knowledge` MCP server to discover available stores, then use the
 `search` tool with the appropriate `vector_store_id`.
 ```
 
+### Installing rules locally
+
+In [config-install](docs/config-install.md) see an example approach for declarative
+configuration and delivery into worspace targets (projects repositories) of locally
+provided and external knowledge stores, skills, rules, and more to that.
+
 RAG MCP Server
 ==============
 
-The rules system to use with your personal army of agents is just a flavor to prefer, or not.
-While the main purpose of this repository is to demonstrate a thin MCP server
-(requires no LLM nor embedding models) that exposes knowledge stores as searchable MCP resources
-in agents, subagents, and humans prompts by augmenting it (RAG) with the searched context.
+The rules system to use with your personal army of agents is just a personal flavor.
+While the main purpose of this repository is to demonstrate an MCP server that exposes
+knowledge stores as searchable MCP resources for AI agents and humans. Such integration
+with external knowledge systems helps with de-duplicating rules, separating upstream
+guidelines from downstream specifics, giving subagent personas a better SME context.
 
-The prompting actor, whomever or whatever it is, gets formatted markdown injected directly into the context window while executing their workflows, following rules, or "wearing hats" of experts in other knowledge domains, or acting as other projects' personas. See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md) for its design details.
+The prompting actor, whomever or whatever it is, gets formatted markdown
+injected directly into the context window (or fetched by the agent-side as PNG
+files with the searched text contents) while executing their workflows, following rules,
+or "wearing hats" of experts in other knowledge domains, or playing personas roles.
+
+### Design
+
+See [specs/rag-mcp-server.md](./specs/rag-mcp-server.md) for its initial design details.
+The use of embeddins for improved search and ranking of results is covered with
+[specs/embedding-client.md](./specs/embedding-client.md).
+Choices made for integration with OpenViking are covered in
+[OpenViking comparison](docs/openviking-comparison.md).
+
+### Installation
+
+```bash
+pip install -e .
+```
+
+### Configuration
 
 To let the agents natively running that MCP server instances, provide required configuration
 for each particular backend.
@@ -118,7 +127,7 @@ Example configs for MCP servers are provided in `.cursor-templates/mcp.json.temp
 
 All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-rag/SKILL.md) skill helps with low lever debug of backends via `curl` commands mimicing the agent's `search()` calls.
 
-Configuration via environment variables (prefix `RAG_MCP_`):
+### Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -151,6 +160,8 @@ Configuration via environment variables (prefix `RAG_MCP_`):
 | `RAG_MCP_EMBEDDING_URL` | | Embedding endpoint (OpenAI-compatible `/v1/embeddings`). Auto-derived as `http://127.0.0.1:11434` when OpenViking is enabled |
 | `RAG_MCP_EMBEDDING_MODEL` | `nomic-ai/nomic-embed-text-v1.5` | Embedding model name sent to the embedding service |
 | `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | Solr search strategy: `keyword` (BM25), `semantic` (vector-only), or `hybrid` (BM25 + vector) |
+
+### Supported search backends
 
 **Mock backend** scans subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
 subdirectory name becomes a `vector_store_id`. Works with `.adoc`, `.md`, `.rst`, `.txt`.
@@ -228,54 +239,6 @@ Multiple spaces are comma-separated in `CONFLUENCESPACE` (or `RAG_MCP_CONFLUENCE
 
 > **NOTE**: Make sure that all exported env vars are interpolated in `mcp.json`
 > before letting the agents to load it.
-
-### Sandbox mode (proxychains-ng)
-
-When running inside a network sandbox that uses `proxychains-ng` (via
-`LD_PRELOAD`), the MCP stdio transport breaks because proxychains
-turns pipes into sockets. To work around this:
-
-- Unset `LD_PRELOAD` before launching `rag-mcp-server` so that
-  proxychains does not intercept the stdio transport.
-- Set `HTTPS_PROXY` in the MCP server's environment so that `httpx`
-  routes backend HTTP requests through the proxy natively.
-
-A thin wrapper script that does `unset LD_PRELOAD; exec rag-mcp-server "$@"`
-is sufficient. The sandbox entry point should patch `mcp.json` at
-startup to inject the session proxy URL and rewrite the `command` to
-use the wrapper.
-
-**Limitation:** only one sandboxed agent per workspace at a time. Each
-sandbox session gets a unique proxy token baked into `mcp.json`. A
-second agent in the same workspace would get a different token, but
-`mcp.json` can only hold one. The entry point should detect the
-conflict and abort.
-
-For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
-with it via `curl`:
-
-```bash
-RAG_MCP_BACKEND=mock \
-RAG_MCP_KNOWLEDGE_DIR=./knowledge \
-RAG_MCP_TRANSPORT=streamable-http \
-RAG_MCP_PORT=8321 \
-rag-mcp-server
-```
-
-The server starts at `http://localhost:8321/mcp`.
-
-### Skills
-
-| Skill | File | Purpose |
-|-------|------|---------|
-| MCP RAG CLI | `skills/mcp-rag/SKILL.md` | CLI navigation guide for the RAG MCP server via `curl` - session init, progressive store discovery, search, recovery hints |
-| OpenStack Review | `skills/or/SKILL.md` | OpenStack Gerrit code review analysis |
-| Spec-Only Review | `skills/sor/SKILL.md` | OpenStack spec-only review |
-
-The `mcp-rag` skill is referenced by advisory rules (e.g. `rag-nova-dev.mdc`)
-so the agent knows the MCP protocol mechanics - how to start the server,
-initialize a session, discover stores, call the `search` tool, and stop the
-server when done.
 
 ### External knowledge stores
 
@@ -371,3 +334,66 @@ Categories: `preference`, `decision`, `learning`, `correction`, `context`, `work
 See [specs/memory-tools.md](./specs/memory-tools.md) for the full design spec
 and [docs/openviking-comparison.md](./docs/openviking-comparison.md) for how
 this relates to OpenViking's hook-based transparent memory.
+
+### Sandbox (nono + proxychains-ng)
+
+When running inside a network sandbox that uses `proxychains-ng` (via
+`LD_PRELOAD`), the MCP stdio transport breaks because proxychains
+turns pipes into sockets. To work around this:
+
+- Unset `LD_PRELOAD` before launching `rag-mcp-server` so that
+  proxychains does not intercept the stdio transport.
+- Set `HTTPS_PROXY` in the MCP server's environment so that `httpx`
+  routes backend HTTP requests through the proxy natively.
+
+A thin wrapper script that does `unset LD_PRELOAD; exec rag-mcp-server "$@"`
+is sufficient. The sandbox entry point should patch `mcp.json` at
+startup to inject the session proxy URL and rewrite the `command` to
+use the wrapper.
+
+**Limitation:** only one sandboxed agent per workspace at a time. Each
+sandbox session gets a unique proxy token baked into `mcp.json`. A
+second agent in the same workspace would get a different token, but
+`mcp.json` can only hold one. The entry point should detect the
+conflict and abort.
+
+For manual debugging of rag mcp server backends, start the server with `streamable-http` transport so you can interact
+with it via `curl`:
+
+```bash
+RAG_MCP_BACKEND=mock \
+RAG_MCP_KNOWLEDGE_DIR=./knowledge \
+RAG_MCP_TRANSPORT=streamable-http \
+RAG_MCP_PORT=8321 \
+rag-mcp-server
+```
+
+The server starts at `http://localhost:8321/mcp`.
+
+### Debugging
+
+| Skill | File | Purpose |
+|-------|------|---------|
+| MCP RAG CLI | `skills/mcp-rag/SKILL.md` | CLI navigation guide for the RAG MCP server via `curl` - session init, progressive store discovery, search, recovery hints |
+
+The `mcp-rag` skill is referenced by advisory rules (e.g. `rag-nova-dev.mdc`)
+so the agent knows the MCP protocol mechanics - how to start the server,
+initialize a session, discover stores, call the `search` tool, and stop the
+server when done.
+
+What's Next?
+============
+
+See this effort's going [slightly beyond](./HUMANS.md) and shares vision
+of [agent-agnostic](docs/agent-agnostic-approach.md) REST-like ASDLC architecture.
+
+See also my further ideas for brain storming topics for:
+* [search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
+knowledge retrieval approaches;
+* [long-running subagents](docs/long-running-subagents.md) for how deep agents
+maintain instructional consistency over extended sessions (NOTE: those '@@'
+markers do nothing and seem to be AI hallucinations);
+* [Kubernetes agentic landscape](docs/k8s-agentic-landscape.md) for the future
+vision of autonomous ASDLC - where sandbox runtimes (OpenShell), MCP gateways, agent
+identity, and context databases compose into a fully autonomous toolchain (the
+current state is human-driven, AI-assisted SDLC).

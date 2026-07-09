@@ -24,6 +24,8 @@ except ImportError:
 from rag_mcp.png_wrap import (  # noqa: E402
     FONT_SIZE,
     FRAME_SIZE,
+    LINE_SPACING,
+    _ANSI_RE,
     minify_text,
 )
 
@@ -108,6 +110,57 @@ class TestMinifyText(unittest.TestCase):
         self.assertIn("bold italic", out)
 
 
+class TestAnsiStripping(unittest.TestCase):
+    """Test ANSI escape sequence stripping."""
+
+    def test_strips_csi_color_codes(self):
+        text = "\x1b[31mred text\x1b[0m normal"
+        self.assertEqual("red text normal", _ANSI_RE.sub("", text))
+
+    def test_strips_csi_cursor_movement(self):
+        text = "\x1b[2Jhello\x1b[1;1H"
+        self.assertEqual("hello", _ANSI_RE.sub("", text))
+
+    def test_strips_osc_window_title(self):
+        text = "\x1b]0;my title\x07content here"
+        self.assertEqual("content here", _ANSI_RE.sub("", text))
+
+    def test_preserves_plain_text(self):
+        text = "no escapes here at all"
+        self.assertEqual(text, _ANSI_RE.sub("", text))
+
+    def test_mixed_escapes_and_newlines(self):
+        text = "\x1b[1mbold\x1b[0m\nline2\x1b[32mgreen\x1b[0m"
+        self.assertEqual("bold\nline2green", _ANSI_RE.sub("", text))
+
+
+class TestNewlinePacking(unittest.TestCase):
+    """Test that newline packing flattens text correctly."""
+
+    @unittest.skipUnless(HAS_PILLOW, "Pillow not installed")
+    def test_multiline_packed_into_single_frame(self):
+        from rag_mcp.png_wrap import text_to_png_frames
+        text = "line one\nline two\nline three\nline four"
+        frames = text_to_png_frames(text, do_minify=False)
+        self.assertEqual(1, len(frames))
+        self.assertTrue(frames[0].startswith(b"\x89PNG"))
+
+    @unittest.skipUnless(HAS_PILLOW, "Pillow not installed")
+    def test_ansi_stripped_before_packing(self):
+        from rag_mcp.png_wrap import text_to_png_frames
+        text = "\x1b[31mred\x1b[0m\n\x1b[32mgreen\x1b[0m\nnormal"
+        frames = text_to_png_frames(text, do_minify=False)
+        self.assertEqual(1, len(frames))
+        self.assertTrue(frames[0].startswith(b"\x89PNG"))
+
+    @unittest.skipUnless(HAS_PILLOW, "Pillow not installed")
+    def test_multiple_newlines_collapsed(self):
+        from rag_mcp.png_wrap import text_to_png_frames, estimate_chars_per_frame
+        short = "word " * 10
+        frames = text_to_png_frames(short + "\n\n\n\n\n" + short, do_minify=False)
+        self.assertEqual(1, len(frames))
+
+
 class TestPngWrapConstants(unittest.TestCase):
     """Verify module-level constants are sane."""
 
@@ -115,7 +168,10 @@ class TestPngWrapConstants(unittest.TestCase):
         self.assertEqual(1568, FRAME_SIZE)
 
     def test_font_size(self):
-        self.assertEqual(20, FONT_SIZE)
+        self.assertEqual(19, FONT_SIZE)
+
+    def test_line_spacing(self):
+        self.assertEqual(2, LINE_SPACING)
 
     @unittest.skipUnless(HAS_PILLOW, "Pillow not installed")
     def test_usable_dimensions_positive(self):

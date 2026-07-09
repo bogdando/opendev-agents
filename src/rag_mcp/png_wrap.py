@@ -4,11 +4,14 @@ Each frame is a monospace-rendered page of the search results,
 returned as ImageContent via FastMCP's Image helper.  This bypasses
 token-budget constraints by encoding results in the vision pathway.
 
+Text is packed using the same newline-flattening approach as txt2png:
+newlines become spaces, multiple spaces are collapsed, and the flat
+stream is re-wrapped to the frame width. This maximises character
+density per frame compared to preserving original line breaks.
+
 Parameters are tuned based on pxpipe's empirical findings:
 - 1568px is Claude's documented vision maximum (no upscale penalty)
-- 20pt font balances density with reliable retrieval (pxpipe showed
-  22pt=100% accuracy, 16pt=17%; we use 20pt as safe middle ground
-  that works across model families including Opus/Sonnet)
+- 19pt font balances density with reliable retrieval
 - Minification strips redundant markdown formatting before render
 """
 
@@ -26,11 +29,13 @@ if TYPE_CHECKING:
 
 FRAME_SIZE = 1568
 MARGIN = 20
-FONT_SIZE = 20
-LINE_SPACING = 3
+FONT_SIZE = 19
+LINE_SPACING = 2
 
 _USABLE_WIDTH = FRAME_SIZE - 2 * MARGIN
 _USABLE_HEIGHT = FRAME_SIZE - 2 * MARGIN
+
+_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07')
 
 
 def _get_font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -50,15 +55,14 @@ def _get_font() -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def _measure_line_height(font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> int:
+def _calibrate(font: ImageFont.FreeTypeFont | ImageFont.ImageFont):
+    """Return (wrap_width, lines_per_frame, line_height) for the loaded font."""
     bbox = font.getbbox("Ag")
-    return (bbox[3] - bbox[1]) + LINE_SPACING
-
-
-def _wrap_char_width(font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> int:
-    """Determine how many monospace characters fit in the usable width."""
+    line_h = (bbox[3] - bbox[1]) + LINE_SPACING
     char_w = font.getbbox("M")[2] - font.getbbox("M")[0]
-    return max(1, _USABLE_WIDTH // char_w)
+    wrap_width = max(1, _USABLE_WIDTH // char_w - 2)
+    lines_per_frame = max(1, _USABLE_HEIGHT // line_h - 1)
+    return wrap_width, lines_per_frame, line_h
 
 
 def minify_text(text: str) -> str:
@@ -77,53 +81,97 @@ def minify_text(text: str) -> str:
     return text.strip()
 
 
+def _consume_frame(buf: str, wrap_width: int,
+                   lines_per_frame: int) -> tuple[str, str]:
+    """Wrap *buf* and extract exactly one frame's worth of lines.
+
+    Returns ``(frame_text, remaining_buf)`` where *frame_text* contains
+    newline-joined wrapped lines ready for rendering and *remaining_buf*
+    is the unconsumed tail.
+    """
+    window = lines_per_frame * (wrap_width + 1) * 2
+    candidate = re.sub(r"  +", " ", buf[:window])
+    tail = buf[window:]
+
+    wrapped = textwrap.wrap(candidate, width=wrap_width, break_on_hyphens=False)
+    frame_lines = wrapped[:lines_per_frame]
+    rest_lines = wrapped[lines_per_frame:]
+
+    frame_text = "\n".join(frame_lines)
+    remaining = " ".join(rest_lines)
+    if tail:
+        remaining = (remaining + " " + tail) if remaining else tail
+
+    return frame_text, remaining
+
+
 def text_to_png_frames(text: str, *, do_minify: bool = True) -> list[bytes]:
     """Split *text* into 1568x1568 PNG images, one per page.
 
+    Newlines are replaced with spaces (newline packing) and the flat
+    stream is re-wrapped to the frame width for maximum density.
     Returns a list of PNG-encoded byte buffers.
     """
     if do_minify:
         text = minify_text(text)
 
     font = _get_font()
-    line_h = _measure_line_height(font)
-    wrap_width = _wrap_char_width(font)
-    lines_per_frame = max(1, _USABLE_HEIGHT // line_h)
+    wrap_width, lines_per_frame, line_h = _calibrate(font)
 
-    wrapped_lines: list[str] = []
-    for raw_line in text.splitlines():
-        if not raw_line.strip():
-            wrapped_lines.append("")
-        else:
-            wrapped_lines.extend(textwrap.wrap(raw_line, width=wrap_width))
+    # Strip ANSI escape sequences then flatten newlines to spaces
+    buf = _ANSI_RE.sub("", text)
+    buf = re.sub(r"\n+", " ", buf).strip()
 
     frames: list[bytes] = []
-    for offset in range(0, len(wrapped_lines), lines_per_frame):
-        page_lines = wrapped_lines[offset : offset + lines_per_frame]
+    while buf.strip():
+        frame_text, buf = _consume_frame(buf, wrap_width, lines_per_frame)
+        if not frame_text.strip():
+            break
+
         img = PILImage.new("RGB", (FRAME_SIZE, FRAME_SIZE), color=(255, 255, 255))
         draw = ImageDraw.Draw(img)
 
         y = MARGIN
-        for line in page_lines:
+        for line in frame_text.splitlines():
             draw.text((MARGIN, y), line, fill=(0, 0, 0), font=font)
             y += line_h
 
-        page_num = (offset // lines_per_frame) + 1
-        total_pages = -(-len(wrapped_lines) // lines_per_frame)
-        footer = f"— page {page_num}/{total_pages} —"
-        fw = draw.textlength(footer, font=font)
-        draw.text(
-            ((FRAME_SIZE - fw) / 2, FRAME_SIZE - MARGIN - line_h),
-            footer,
-            fill=(128, 128, 128),
-            font=font,
-        )
+        frames.append(_finalize_frame(img, draw, font, line_h, len(frames) + 1))
 
-        buf = io.BytesIO()
-        img.save(buf, format="PNG", optimize=True)
-        frames.append(buf.getvalue())
+    # Patch total page count into all frames
+    if len(frames) > 1:
+        total = len(frames)
+        patched: list[bytes] = []
+        for idx, raw in enumerate(frames, 1):
+            img = PILImage.open(io.BytesIO(raw))
+            draw = ImageDraw.Draw(img)
+            footer_y = FRAME_SIZE - MARGIN - int(line_h)
+            draw.rectangle([0, footer_y, FRAME_SIZE, FRAME_SIZE], fill=(255, 255, 255))
+            footer = f"— page {idx}/{total} —"
+            fw = draw.textlength(footer, font=font)
+            draw.text(
+                ((FRAME_SIZE - fw) / 2, footer_y),
+                footer, fill=(128, 128, 128), font=font,
+            )
+            out = io.BytesIO()
+            img.save(out, format="PNG", optimize=True)
+            patched.append(out.getvalue())
+        frames = patched
 
     return frames or [_empty_frame()]
+
+
+def _finalize_frame(img, draw, font, line_h: int, page_num: int) -> bytes:
+    """Add a provisional page footer and serialize to PNG bytes."""
+    footer = f"— page {page_num}/? —"
+    fw = draw.textlength(footer, font=font)
+    draw.text(
+        ((FRAME_SIZE - fw) / 2, FRAME_SIZE - MARGIN - line_h),
+        footer, fill=(128, 128, 128), font=font,
+    )
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
 
 
 def _empty_frame() -> bytes:
@@ -140,9 +188,7 @@ def _empty_frame() -> bytes:
 def estimate_chars_per_frame() -> int:
     """Estimate how many characters fit in one frame after minification."""
     font = _get_font()
-    line_h = _measure_line_height(font)
-    wrap_width = _wrap_char_width(font)
-    lines_per_frame = max(1, _USABLE_HEIGHT // line_h)
+    wrap_width, lines_per_frame, _ = _calibrate(font)
     return lines_per_frame * wrap_width
 
 

@@ -12,6 +12,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 try:
     from fastmcp import Context, FastMCP
@@ -21,6 +22,9 @@ except ImportError:
 from rag_mcp.backends import BackendProtocol, get_backend
 from rag_mcp.config import ServerConfig
 from rag_mcp.memory import MemoryProtocol, get_memory_backend
+
+if TYPE_CHECKING:
+    from rag_mcp.embeddings import EmbeddingClient
 
 __all__ = ["AppContext", "Context", "get_app_context", "init_config", "mcp"]
 
@@ -36,6 +40,7 @@ class AppContext:
     backend: BackendProtocol
     config: ServerConfig
     memory: MemoryProtocol | None = None
+    embeddings: "EmbeddingClient | None" = None
 
 
 def get_app_context(ctx: Context) -> AppContext:
@@ -48,13 +53,26 @@ async def _app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     config = _server_config or ServerConfig()
     backend = get_backend(config)
     memory = get_memory_backend(config)
+
+    embeddings = None
+    embed_url = config.effective_embedding_url
+    if embed_url:
+        from rag_mcp.embeddings import EmbeddingClient
+        embeddings = EmbeddingClient(embed_url, config.embedding_model)
+        logger.info(
+            "Embedding client enabled: %s model=%s",
+            embed_url, config.embedding_model,
+        )
+
     logger.info(
         "RAG MCP server ready  name=%s  backend=%s  memory=%s",
         config.effective_server_name,
         config.backend,
         config.memory_backend,
     )
-    yield {"app": AppContext(backend=backend, config=config, memory=memory)}
+    yield {"app": AppContext(
+        backend=backend, config=config, memory=memory, embeddings=embeddings,
+    )}
 
 
 mcp = FastMCP(

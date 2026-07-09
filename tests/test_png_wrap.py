@@ -155,7 +155,7 @@ class TestNewlinePacking(unittest.TestCase):
 
     @unittest.skipUnless(HAS_PILLOW, "Pillow not installed")
     def test_multiple_newlines_collapsed(self):
-        from rag_mcp.png_wrap import text_to_png_frames, estimate_chars_per_frame
+        from rag_mcp.png_wrap import text_to_png_frames
         short = "word " * 10
         frames = text_to_png_frames(short + "\n\n\n\n\n" + short, do_minify=False)
         self.assertEqual(1, len(frames))

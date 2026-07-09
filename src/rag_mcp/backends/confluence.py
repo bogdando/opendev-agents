@@ -230,7 +230,7 @@ class ConfluenceBackend:
         return None
 
     async def search(
-        self, query: str, store_id: str, top_k: int
+        self, query: str, store_id: str, top_k: int, **kwargs
     ) -> list[dict]:
         space_key = self._resolve_space_key(store_id)
         if space_key is None:

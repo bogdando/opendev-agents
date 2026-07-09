@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from rag_mcp.config import ServerConfig
+    from rag_mcp.embeddings import EmbeddingClient as EmbeddingClient
 
 
 class BackendProtocol(Protocol):
     """Interface that every RAG backend must satisfy."""
 
     async def search(
-        self, query: str, store_id: str, top_k: int
+        self, query: str, store_id: str, top_k: int, **kwargs: Any
     ) -> list[dict]: ...
 
     async def list_stores(self) -> list[dict]: ...
@@ -34,6 +35,7 @@ def get_backend(config: ServerConfig) -> BackendProtocol:
             config.solr_url,
             config.max_response_chars,
             proxy_url=config.proxy_url,
+            search_mode=config.solr_search_mode,
         )
 
     if config.backend == "confluence":

@@ -72,6 +72,10 @@ class ServerConfig(BaseSettings):
                 values[name] = field_info.default
         return values
 
+    embedding_url: str = ""
+    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    solr_search_mode: Literal["keyword", "semantic", "hybrid"] = "keyword"
+
     memory_backend: Literal["local", "openviking", "none"] = "none"
     memory_dir: str = "./.memories"
     openviking_url: str = "http://127.0.0.1:1933"
@@ -96,6 +100,21 @@ class ServerConfig(BaseSettings):
             "confluence": "rag-knowledge-wiki",
         }
         return _names.get(self.backend, "rag-knowledge")
+
+    @property
+    def effective_embedding_url(self) -> str | None:
+        """Resolve the embedding endpoint.
+
+        Priority:
+        1. Explicit RAG_MCP_EMBEDDING_URL
+        2. Auto-derived from OpenViking (assumes Ollama at default port)
+        3. None (embeddings disabled)
+        """
+        if self.embedding_url:
+            return self.embedding_url
+        if self.memory_backend == "openviking":
+            return "http://127.0.0.1:11434"
+        return None
 
     @property
     def proxy_url(self) -> str | None:

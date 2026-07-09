@@ -10,12 +10,16 @@ Requires a running Solr instance with the OKP ``portal`` core.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from okp_mcp.content import doc_uri  # pyright: ignore[reportMissingImports]
 from okp_mcp.formatting import annotate_result  # pyright: ignore[reportMissingImports]
 from okp_mcp.solr import _clean_query, _solr_query  # pyright: ignore[reportMissingImports]
+
+if TYPE_CHECKING:
+    from rag_mcp.embeddings import EmbeddingClient
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +32,29 @@ class SolrBackend:
         solr_url: str,
         max_response_chars: int,
         proxy_url: str | None = None,
+        search_mode: str = "keyword",
     ) -> None:
-        self._solr_endpoint = f"{solr_url}/solr/portal/select"
+        self._solr_url = solr_url.rstrip("/")
+        self._solr_endpoint = f"{self._solr_url}/solr/portal/select"
         self._max_response_chars = max_response_chars
+        self._search_mode = search_mode
         self._client = httpx.AsyncClient(
             timeout=30.0, proxy=proxy_url
         )
 
     async def search(
-        self, query: str, store_id: str, top_k: int
+        self, query: str, store_id: str, top_k: int, **kwargs: Any
     ) -> list[dict]:
+        embeddings: EmbeddingClient | None = kwargs.get("embeddings")
+
+        if self._search_mode in ("semantic", "hybrid") and embeddings:
+            result = await self._vector_search(query, store_id, top_k, embeddings)
+            if result is not None:
+                return result
+            logger.warning(
+                "Vector search failed, falling back to BM25 keyword search"
+            )
+
         cleaned = _clean_query(query)
         data = await _solr_query(
             {
@@ -124,6 +141,72 @@ class SolrBackend:
                     },
                 }
             )
+        return results
+
+    async def _vector_search(
+        self,
+        query: str,
+        store_id: str,
+        top_k: int,
+        embeddings: "EmbeddingClient",
+    ) -> list[dict] | None:
+        """Attempt semantic or hybrid search via Solr vector endpoints.
+
+        Returns None if embedding or Solr request fails (caller falls back).
+        """
+        vec = await embeddings.embed_query(query)
+        if vec is None:
+            return None
+
+        vector_str = "[" + ",".join(str(v) for v in vec) + "]"
+        endpoint = (
+            f"{self._solr_url}/solr/portal/hybrid-search"
+            if self._search_mode == "hybrid"
+            else f"{self._solr_url}/solr/portal/semantic-search"
+        )
+
+        params: dict[str, Any] = {"topK": top_k, "vector": vector_str}
+        if self._search_mode == "hybrid":
+            params["q"] = _clean_query(query)
+
+        try:
+            resp = await self._client.post(
+                endpoint,
+                data=params,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("Solr vector endpoint failed: %s", exc)
+            return None
+
+        docs = body.get("response", {}).get("docs", [])
+        if not docs:
+            return []
+
+        raw_scores = [d.get("score", 0.0) for d in docs]
+        max_score = max(raw_scores, default=1.0) or 1.0
+
+        results: list[dict] = []
+        for doc in docs:
+            title = doc.get("allTitle") or doc.get("title", "Untitled")
+            content = doc.get("main_content", "")
+            url_slug = doc.get("url_slug", "")
+            source = f"https://access.redhat.com{url_slug}" if url_slug else ""
+            raw_score = doc.get("score", 0.0)
+
+            results.append({
+                "text": f"**{title}**\n\nContent: {content[:3000]}",
+                "source": source,
+                "score": round(raw_score / max_score, 4),
+                "metadata": {
+                    "title": title,
+                    "store_id": store_id,
+                    "doc_kind": doc.get("documentKind"),
+                    "product": doc.get("product"),
+                },
+            })
         return results
 
     async def list_stores(self) -> list[dict]:

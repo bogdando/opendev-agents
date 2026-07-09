@@ -52,7 +52,9 @@ async def search(
             "Read resource knowledge://stores for details."
         )
 
-    results = await app.backend.search(query, vector_store_id, top_k)
+    results = await app.backend.search(
+        query, vector_store_id, top_k, embeddings=app.embeddings,
+    )
 
     if results:
         if app.config.png_wrap:

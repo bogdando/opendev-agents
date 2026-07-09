@@ -16,11 +16,18 @@ under each store subdirectory.  Directory layout expected under
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from rag_mcp.constants import SEARCH_STOP_WORDS
+
+if TYPE_CHECKING:
+    from rag_mcp.embeddings import EmbeddingClient
+
+logger = logging.getLogger(__name__)
 
 _TEXT_EXTENSIONS = frozenset((".md", ".rst", ".adoc", ".txt"))
 
@@ -90,8 +97,10 @@ class MockBackend:
         return None
 
     async def search(
-        self, query: str, store_id: str, top_k: int
+        self, query: str, store_id: str, top_k: int, **kwargs: Any
     ) -> list[dict]:
+        embeddings: EmbeddingClient | None = kwargs.get("embeddings")
+
         store_dir = self._root / store_id
         if not store_dir.is_dir():
             return []
@@ -137,6 +146,33 @@ class MockBackend:
                     },
                 }
             )
+
+        if embeddings and results:
+            results = await self._rerank_with_embeddings(results, query, embeddings)
+
+        return results
+
+    async def _rerank_with_embeddings(
+        self, results: list[dict], query: str, embeddings: "EmbeddingClient"
+    ) -> list[dict]:
+        """Rerank keyword results by cosine similarity to the query."""
+        from rag_mcp.embeddings import cosine_similarity
+
+        q_vec = await embeddings.embed_query(query)
+        if q_vec is None:
+            return results
+
+        texts = [r["text"][:2000] for r in results]
+        doc_vecs = await embeddings.embed(texts)
+        if doc_vecs is None:
+            return results
+
+        for r, d_vec in zip(results, doc_vecs):
+            cos_sim = cosine_similarity(q_vec, d_vec)
+            keyword_score = r["score"]
+            r["score"] = round(0.3 * keyword_score + 0.7 * cos_sim, 4)
+
+        results.sort(key=lambda r: r["score"], reverse=True)
         return results
 
 

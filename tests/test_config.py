@@ -150,6 +150,38 @@ class TestEmptyEnvFallback(unittest.TestCase):
         self.assertEqual(8000, cfg.png_max_chars_per_store)
 
 
+class TestEffectiveEmbeddingUrl(unittest.TestCase):
+    """Test effective_embedding_url resolution priority."""
+
+    def test_explicit_url_takes_priority(self):
+        cfg = ServerConfig(
+            embedding_url="http://llama:8000",
+            memory_backend="openviking",
+        )
+        self.assertEqual("http://llama:8000", cfg.effective_embedding_url)
+
+    def test_derived_from_openviking(self):
+        cfg = ServerConfig(
+            embedding_url="",
+            memory_backend="openviking",
+        )
+        self.assertEqual("http://127.0.0.1:11434", cfg.effective_embedding_url)
+
+    def test_none_when_no_viking_no_explicit(self):
+        cfg = ServerConfig(
+            embedding_url="",
+            memory_backend="none",
+        )
+        self.assertIsNone(cfg.effective_embedding_url)
+
+    def test_none_when_memory_disabled_no_explicit(self):
+        cfg = ServerConfig(
+            embedding_url="",
+            memory_backend="none",
+        )
+        self.assertIsNone(cfg.effective_embedding_url)
+
+
 class TestBackendFactory(unittest.TestCase):
 
     def test_mock_backend(self):

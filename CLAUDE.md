@@ -44,3 +44,5 @@ mock backend (default rag_knowledge). Memories categories:
 - workflow: successful multi-step procedures with inputs, steps,
   and human feedback — include enough detail to reproduce later
 
+@.claude/rules/memory-advisory.mdc
+@.claude/rules/logs-advisory.mdc

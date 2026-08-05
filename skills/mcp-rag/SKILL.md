@@ -49,17 +49,35 @@ running the commands above. The full configuration table:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAG_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
+| `RAG_MCP_SERVER_NAME` | (per backend) | Advertised MCP name: `rag-knowledge` / `rag-knowledge-okp` / `rag-knowledge-wiki` |
 | `RAG_MCP_BACKEND` | `mock` | Backend type: `mock`, `solr`, or `confluence` |
 | `RAG_MCP_KNOWLEDGE_DIR` | `./knowledge` | Path to knowledge store directories (mock backend) |
 | `RAG_MCP_SOLR_URL` | `http://localhost:8983` | Solr base URL (solr backend) |
+| `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | Solr/OKP only: `keyword`, `semantic`, or `hybrid` (needs embeddings for the last two) |
 | `RAG_MCP_CONFLUENCE_URL` | | Confluence site or wiki base (or `CONFLUENCEURL`) |
 | `RAG_MCP_CONFLUENCE_EMAIL` | | Atlassian email (or `CONFLUENCEEMAIL`) |
 | `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
 | `RAG_MCP_CONFLUENCE_SPACE` | | Comma-separated space keys (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
+| `RAG_MCP_PNG_WRAP` | `false` | Return search hits as PNG frames instead of text |
+| `RAG_MCP_PNG_MAX_PAGES` | `3` | Max PNG frames per search response |
+| `RAG_MCP_PNG_MAX_CHARS_PER_STORE` | `4500` | Char budget per store when PNG wrap is on |
+| `RAG_MCP_EMBEDDING_URL` | | Embeddings base URL; auto `http://127.0.0.1:11434` if memory is `openviking` |
+| `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama model id for `/v1/embeddings` |
+| `RAG_MCP_MEMORY_BACKEND` | `none` | `local`, `openviking`, or `none` |
+| `RAG_MCP_MEMORY_DIR` | `./.memories` | Path for local memory backend |
+| `RAG_MCP_OPENVIKING_URL` | `http://127.0.0.1:1933` | OpenViking server URL |
+| `RAG_MCP_OPENVIKING_ACCOUNT` | `default` | OpenViking account header |
+| `RAG_MCP_OPENVIKING_USER` | `default` | OpenViking user header |
+| `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
+| `RAG_MCP_OPENVIKING_API_KEY` | | Required when OV binds off-localhost |
 | `RAG_MCP_LOG_LEVEL` | `INFO` | Use `DEBUG` for Confluence CQL logging |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |
 | `RAG_MCP_PORT` | `8000` | Port for SSE/HTTP transport |
+
+See the project `README.md` Configuration / Environment variables section for
+proxy/`SSL_CERT_*` notes, template `envsubst` placeholders, and embedding
+fallback behavior. Empty env values are treated as unset (code defaults apply).
 
 **Mock backend** scans (auto-refresh on changes) subdirectories under `RAG_MCP_KNOWLEDGE_DIR` - each
 subdirectory name becomes a `vector_store_id`. Add `.md` files to populate stores.

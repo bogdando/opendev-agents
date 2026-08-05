@@ -73,7 +73,7 @@ class ServerConfig(BaseSettings):
         return values
 
     embedding_url: str = ""
-    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+    embedding_model: str = "nomic-embed-text"
     solr_search_mode: Literal["keyword", "semantic", "hybrid"] = "keyword"
 
     memory_backend: Literal["local", "openviking", "none"] = "none"

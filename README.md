@@ -129,6 +129,8 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 
 ### Environment variables
 
+> **NOTE:** Empty strings in the env block are treated as unset and the code defaults apply.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAG_MCP_TRANSPORT` | `stdio` | `stdio`, `sse`, or `streamable-http` |
@@ -157,9 +159,9 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_OPENVIKING_USER` | `default` | OpenViking user header |
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
 | `RAG_MCP_OPENVIKING_API_KEY` | | OpenViking API key (required when OV binds to non-localhost for sandbox access) |
-| `RAG_MCP_EMBEDDING_URL` | | Embedding endpoint (OpenAI-compatible `/v1/embeddings`). Auto-derived as `http://127.0.0.1:11434` when OpenViking is enabled |
-| `RAG_MCP_EMBEDDING_MODEL` | `nomic-ai/nomic-embed-text-v1.5` | Embedding model name sent to the embedding service |
-| `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | Solr search strategy: `keyword` (BM25), `semantic` (vector-only), or `hybrid` (BM25 + vector) |
+| `RAG_MCP_EMBEDDING_URL` | | Embedding endpoint base URL (OpenAI-compatible `POST {url}/v1/embeddings`). Auto-derived as `http://127.0.0.1:11434` when `RAG_MCP_MEMORY_BACKEND=openviking`. Empty/unset disables embeddings unless OpenViking auto-derive applies |
+| `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | **Ollama/Llama Stack model id** for `POST /v1/embeddings` (not a search strategy). Must match what the embed service has loaded (`ollama pull nomic-embed-text`). Mismatched model name fallbacks to keyword mode |
+| `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | **Solr/OKP retrieval strategy only** (ignored by mock/confluence): `keyword` (BM25), `semantic` (vector), or `hybrid` (BM25 + vector). Needs a working embedding client for `semantic`/`hybrid`. Templates default OKP to `hybrid` |
 
 ### Supported search backends
 
@@ -185,42 +187,46 @@ export OKPNOPROXY="127.0.0.1,localhost,::1"
 This example requires a local instance of OKP up and running. You can use an externally
 hosted one as well.
 
-To enable **hybrid search** (BM25 + vector reranking) for the Solr backend,
-set the search mode. When OpenViking is already the memory backend, the
-embedding URL and model are auto-derived — no extra config needed:
+`.cursor-templates/mcp.json.template` hardcodes safe defaults:
+
+| mcp.json key | Value | Role |
+|--------------|-------|------|
+| `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | Which embed model Ollama loads |
+| `RAG_MCP_SOLR_SEARCH_MODE` | `hybrid` (okp server only) | How Solr ranks results |
+
+To enable **hybrid search** (BM25 + vector reranking) for the OKP/Solr backend,
+set the search mode. When OpenViking is already the memory backend for mock server, the
+embedding URL and model are auto-derived from it. For OKP alone set an explicit embed URL
+if `RAG_MCP_MEMORY_BACKEND=none`:
 
 ```bash
-export RAG_MCP_SOLR_SEARCH_MODE="hybrid"
+export RAG_MCP_SOLR_SEARCH_MODE=hybrid
+export RAG_MCP_EMBEDDING_MODEL=nomic-embed-text
+export RAG_MCP_EMBEDDING_URL="http://127.0.0.1:11434"
 ```
 
-Without OpenViking used by mock backend, provide the embedding endpoint explicitly:
-
-```bash
-export RAG_MCP_SOLR_SEARCH_MODE="hybrid"
-export RAG_MCP_EMBEDDING_URL="http://llama-stack:8000"
-```
-
-**Mock backend with automatic embedding reranking** requires no extra
-embedding configuration when OpenViking is the memory backend — the embedding
-client auto-derives from the same Ollama instance that OpenViking uses:
+**Mock backend with embedding-ranked search** when OpenViking is the memory
+backend:
 
 ```bash
 export RAG_MCP_BACKEND="mock"
 export RAG_MCP_MEMORY_BACKEND="openviking"
 export RAG_MCP_OPENVIKING_URL="http://127.0.0.1:1933"
-# Embedding auto-enabled: uses Ollama at http://127.0.0.1:11434 (no extra config needed)
+# Embedding auto-enabled at http://127.0.0.1:11434 with model nomic-embed-text
 ```
 
-When the embedding service is available, mock backend keyword results are
-reranked using cosine similarity (70% semantic + 30% keyword weight).
+When embeddings succeed, mock ranks docs with cosine similarity
+(70% semantic + 30% keyword weight). On embed failure it logs
+`WARNING rag_mcp.embeddings: Embedding request failed` and uses keyword-only
+search.
 
 > **NOTE**: `RAG_MCP_EMBEDDING_URL` does not configure OpenViking itself —
-> OpenViking manages its own Ollama connection independently. The auto-derive
-> logic simply assumes the same Ollama instance is reachable at `127.0.0.1:11434`
-> and calls it with `RAG_MCP_EMBEDDING_MODEL`. The default model
-> (`nomic-ai/nomic-embed-text-v1.5`) already matches OpenViking's default, so
-> no extra configuration is needed in the common case. Only override
-> `RAG_MCP_EMBEDDING_MODEL` if you've changed the model in OpenViking's config.
+> OpenViking manages its own Ollama connection (see `ov.conf` below). The
+> auto-derive logic only assumes the same Ollama is reachable at
+> `127.0.0.1:11434` and calls it with `RAG_MCP_EMBEDDING_MODEL`. Keep that
+> model id aligned with `ollama pull` / `embedding.dense.model` in `ov.conf`
+> (default: `nomic-embed-text`). Do not use the Hugging Face-style id
+> `nomic-ai/nomic-embed-text-v1.5` against stock Ollama.
 
 **Confluence backend** queries Atlassian Confluence Cloud spaces via CQL
 search. Each configured space key becomes a `vector_store_id` (lowercased).

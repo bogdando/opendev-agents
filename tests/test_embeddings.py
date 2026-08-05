@@ -35,7 +35,7 @@ class TestEmbeddingClient(unittest.IsolatedAsyncioTestCase):
     def _client(self, api_key: str = "") -> EmbeddingClient:
         return EmbeddingClient(
             base_url="http://localhost:11434",
-            model="nomic-ai/nomic-embed-text-v1.5",
+            model="nomic-embed-text",
             api_key=api_key,
         )
 

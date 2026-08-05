@@ -25,3 +25,5 @@ whenever:
 - A workflow succeeds with confirmed outcome
 - A tool or issued command succeeds with expected results.
 Allowed memories categories: preference, decision, learning, correction, context, workflow
+@.claude/rules/logs-advisory.mdc
+@.claude/rules/memory-advisory.mdc

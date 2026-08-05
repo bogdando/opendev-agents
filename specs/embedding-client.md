@@ -11,15 +11,16 @@ external OpenViking server which itself uses **Ollama** with
 `nomic-embed-text` (768 dimensions) at `http://127.0.0.1:11434/v1`.
 
 Llama Stack (lightspeed-core) also exposes a compatible
-`/v1/embeddings` endpoint with `nomic-ai/nomic-embed-text-v1.5` on
-port 8321.
+`/v1/embeddings` endpoint; its default model id is often the Hugging Face
+path `nomic-ai/nomic-embed-text-v1.5`. Stock Ollama uses the short tag
+`nomic-embed-text` instead — that is the rag-mcp-server default.
 
 Both services share the **OpenAI-compatible embeddings API**:
 
 ```
 POST /v1/embeddings
 {
-  "model": "nomic-ai/nomic-embed-text-v1.5",
+  "model": "nomic-embed-text",
   "input": ["query text"]
 }
 → {"data": [{"embedding": [0.1, ...], "index": 0}]}
@@ -135,17 +136,18 @@ New fields in `ServerConfig`:
 | Field | Env var | Default | Purpose |
 |-------|---------|---------|---------|
 | `embedding_url` | `RAG_MCP_EMBEDDING_URL` | `""` | Explicit embedding endpoint (Llama Stack or Ollama base URL) |
-| `embedding_model` | `RAG_MCP_EMBEDDING_MODEL` | `nomic-ai/nomic-embed-text-v1.5` | Model ID for `/v1/embeddings` |
-| `embedding_ollama_url` | `RAG_MCP_EMBEDDING_OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama base URL used when deriving from OpenViking |
-| `solr_search_mode` | `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | One of `keyword`, `semantic`, `hybrid` |
+| `embedding_model` | `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | Ollama/Llama Stack model id for `/v1/embeddings` |
+| `solr_search_mode` | `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | Solr/OKP only: `keyword`, `semantic`, or `hybrid` |
+
+When `embedding_url` is empty and `memory_backend=openviking`,
+`effective_embedding_url` resolves to `http://127.0.0.1:11434`.
 
 ```python
 class ServerConfig(BaseSettings):
     # ... existing fields ...
 
     embedding_url: str = ""
-    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
-    embedding_ollama_url: str = "http://127.0.0.1:11434"
+    embedding_model: str = "nomic-embed-text"
     solr_search_mode: Literal["keyword", "semantic", "hybrid"] = "keyword"
 ```
 

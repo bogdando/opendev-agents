@@ -105,10 +105,94 @@ class MockBackend:
         if not store_dir.is_dir():
             return []
 
+        all_files = _text_files(store_dir)
+        if not all_files:
+            return []
+
+        if embeddings:
+            results = await self._semantic_search(
+                query, store_id, all_files, top_k, embeddings
+            )
+            if results:
+                return results
+
+        return self._keyword_search(query, store_id, all_files, top_k)
+
+    async def _semantic_search(
+        self,
+        query: str,
+        store_id: str,
+        files: list[Path],
+        top_k: int,
+        embeddings: "EmbeddingClient",
+    ) -> list[dict]:
+        """Semantic search: embed query + all docs, rank by cosine similarity.
+
+        Keyword hits boost scores but are not required for inclusion.
+        Falls back to empty list on embedding failure (caller uses keyword).
+        """
+        from rag_mcp.embeddings import cosine_similarity
+
+        q_vec = await embeddings.embed_query(query)
+        if q_vec is None:
+            return []
+
+        file_texts = [f.read_text(errors="replace") for f in files]
+        chunks = [t[:2000] for t in file_texts]
+        doc_vecs = await embeddings.embed(chunks)
+        if doc_vecs is None:
+            return []
+
         query_lower = query.lower()
         keywords = [
-            kw
-            for kw in query_lower.split()
+            kw for kw in query_lower.split()
+            if kw not in SEARCH_STOP_WORDS
+        ]
+        if not keywords:
+            keywords = query_lower.split()
+
+        scored: list[tuple[float, Path, str]] = []
+        for path, text, d_vec in zip(files, file_texts, doc_vecs):
+            cos_sim = cosine_similarity(q_vec, d_vec)
+            keyword_boost = 0.0
+            if keywords:
+                text_lower = text.lower()
+                hits = sum(1 for kw in keywords if kw in text_lower)
+                keyword_boost = hits / len(keywords)
+            score = 0.7 * cos_sim + 0.3 * keyword_boost
+            scored.append((score, path, text))
+
+        scored.sort(key=lambda t: t[0], reverse=True)
+
+        results: list[dict] = []
+        for score, path, text in scored[:top_k]:
+            title = _extract_title(text, path)
+            rel = os.path.relpath(path, self._root)
+            results.append(
+                {
+                    "text": text,
+                    "source": rel,
+                    "score": round(score, 4),
+                    "metadata": {
+                        "title": title,
+                        "store_id": store_id,
+                        "file_path": str(path),
+                    },
+                }
+            )
+        return results
+
+    def _keyword_search(
+        self,
+        query: str,
+        store_id: str,
+        files: list[Path],
+        top_k: int,
+    ) -> list[dict]:
+        """Keyword-only fallback when embeddings are unavailable."""
+        query_lower = query.lower()
+        keywords = [
+            kw for kw in query_lower.split()
             if kw not in SEARCH_STOP_WORDS
         ]
         if not keywords:
@@ -117,13 +201,10 @@ class MockBackend:
             return []
 
         scored: list[tuple[float, Path, str]] = []
-
-        for text_file in _text_files(store_dir):
+        for text_file in files:
             text = text_file.read_text(errors="replace")
             text_lower = text.lower()
-            hits = sum(
-                1 for kw in keywords if kw in text_lower
-            )
+            hits = sum(1 for kw in keywords if kw in text_lower)
             if hits > 0:
                 score = hits / len(keywords)
                 scored.append((score, text_file, text))
@@ -146,33 +227,6 @@ class MockBackend:
                     },
                 }
             )
-
-        if embeddings and results:
-            results = await self._rerank_with_embeddings(results, query, embeddings)
-
-        return results
-
-    async def _rerank_with_embeddings(
-        self, results: list[dict], query: str, embeddings: "EmbeddingClient"
-    ) -> list[dict]:
-        """Rerank keyword results by cosine similarity to the query."""
-        from rag_mcp.embeddings import cosine_similarity
-
-        q_vec = await embeddings.embed_query(query)
-        if q_vec is None:
-            return results
-
-        texts = [r["text"][:2000] for r in results]
-        doc_vecs = await embeddings.embed(texts)
-        if doc_vecs is None:
-            return results
-
-        for r, d_vec in zip(results, doc_vecs):
-            cos_sim = cosine_similarity(q_vec, d_vec)
-            keyword_score = r["score"]
-            r["score"] = round(0.3 * keyword_score + 0.7 * cos_sim, 4)
-
-        results.sort(key=lambda r: r["score"], reverse=True)
         return results
 
 

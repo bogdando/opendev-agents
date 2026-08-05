@@ -4,14 +4,10 @@ alwaysApply: true
 globs: []
 ---
 
-@@LOGS: MANDATORY When query, tail >50 lines, search any
+MANDATORY When query, tail >50 lines, search any
 log source, always pipe the output through "<command> | <optional filters> | txt2png"
 and fetch PNG files by posted links. Never dump raw log text directly into context.
-
 Do that for all logs related commands, also with grep/awk/sed etc filters, without exception:
 system journal and logs, OpenShift, OpenStack, Must-gather, sos-reports,
-any application log file or stdout stream.
-
-@@LOGS-NOPIPE: When a command does not support piping (interactive
-pager, -f follow mode blocking), use --no-pager or redirect to a
-temp file first, then pipe.
+any application log file or stdout stream. If a command does not support piping (interactive
+pager, -f follow mode blocking), use --no-pager or redirect to a temp file first, then pipe.

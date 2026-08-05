@@ -4,23 +4,17 @@ alwaysApply: true
 globs: []
 ---
 
-@@RECALL: MANDATORY At the start of each session, always call
-<prefix>_recall(query=<context>). To discover tool prefix read
-knowledge://stores from mock backend (default rag_knowledge).
-Always recall how-tos when you cannot locate a resource (repo, file, URL)
-or when you misused API call parameters, or a tool command line arguments,
-or a system path.
+MANDATORY always call <prefix>_recall(query=<context>) before searching, instead of guessing,
+also when resuming a session, or getting a new prompt. Always recall HOW-TOs when you cannot
+locate a system path, repo, file, URL, or when you misused API call or a command line arguments.
+Read available <prefix>_search, <prefix>_recall, <prefix>_remember tool names from
+knowledge://stores of rag-knowledge mcp.
 
-@@REMEMBER: MANDATORY When the user explicitly states a preference, makes a
-significant architectural decision, corrects you, or confirms a
-successful multi-step procedure, or when your (agent's) issued tool command
-succeeds with expected results, call <prefix>_remember(content=<memories>,
-category=...). To discover tool prefix read knowledge://stores from
-mock backend (default rag_knowledge). Memories categories:
-- preference: coding style, tool choices, naming conventions
-- decision: architectural choices, tech stack selections
-- learning: project-specific knowledge you discovered
-- correction: mistakes you made that shouldn't repeat
-- context: general useful context for future sessions
-- workflow: successful multi-step procedures with inputs, steps,
-  and human feedback — include enough detail to reproduce later
+MANDATORY always save memories via <prefix>_remember(content=..., category=...)
+whenever:
+- User states a preference, corrects a mistake or confirms anything
+- A significant architectural decision was made by a user
+- You learned conventions, a path, a source or a URL
+- A workflow succeeds with confirmed outcome
+- A tool or issued command succeeds with expected results.
+Allowed memories categories: preference, decision, learning, correction, context, workflow

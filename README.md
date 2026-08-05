@@ -327,9 +327,7 @@ systemctl --user enable --now ollama
 systemctl --user enable --now ollama-pull
 ```
 
-Memory tools should be triggered by baseline rules with `@@RECALL:` / `@@REMEMBER:`
-markers (see `knowledge/baseline/memory-advisory.mdc`) and/or by direct human instructions.
-Categories: `preference`, `decision`, `learning`, `correction`, `context`, `workflow`.
+Memory tools should be triggered by baseline rules and/or by direct human instructions.
 
 See [specs/memory-tools.md](./specs/memory-tools.md) for the full design spec
 and [docs/openviking-comparison.md](./docs/openviking-comparison.md) for how
@@ -390,9 +388,6 @@ of [agent-agnostic](docs/agent-agnostic-approach.md) REST-like ASDLC architectur
 See also my further ideas for brain storming topics for:
 * [search() vs subagent personas](docs/search-vs-subagents.md) for a comparison of
 knowledge retrieval approaches;
-* [long-running subagents](docs/long-running-subagents.md) for how deep agents
-maintain instructional consistency over extended sessions (NOTE: those '@@'
-markers do nothing and seem to be AI hallucinations);
 * [Kubernetes agentic landscape](docs/k8s-agentic-landscape.md) for the future
 vision of autonomous ASDLC - where sandbox runtimes (OpenShell), MCP gateways, agent
 identity, and context databases compose into a fully autonomous toolchain (the

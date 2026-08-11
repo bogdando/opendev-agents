@@ -45,16 +45,24 @@ class OpenVikingMemoryBackend:
     async def recall(
         self, query: str, category: str = "", top_k: int = 5, **kwargs
     ) -> list[dict]:
-        """Semantic search over stored memories via OV's search API."""
+        """Semantic search over stored memories via OV's search API.
+
+        When *detail_level* is passed (via kwargs), requests the
+        appropriate content tier from OV. OV returns L0/L1 summaries
+        if ``auto_generate_l0/l1`` is enabled in its config.
+        """
+        detail_level = kwargs.get("detail_level", "L2")
         target_uri = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
             target_uri = f"{target_uri}/{category}"
 
-        payload = {
+        payload: dict = {
             "query": query,
             "target_uri": target_uri,
             "limit": top_k,
         }
+        if detail_level in ("L0", "L1"):
+            payload["detail_level"] = detail_level.lower()
 
         try:
             async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
@@ -77,14 +85,17 @@ class OpenVikingMemoryBackend:
             content = item.get("content", "")
             if not content and uri:
                 content = await self._read_content(uri)
-            results.append(
-                {
-                    "content": content,
-                    "category": item.get("category", "context"),
-                    "saved_at": item.get("saved_at", ""),
-                    "uri": uri,
-                }
-            )
+            mem = {
+                "content": content,
+                "category": item.get("category", "context"),
+                "saved_at": item.get("saved_at", ""),
+                "uri": uri,
+            }
+            if item.get("l0_summary"):
+                mem["l0_summary"] = item["l0_summary"]
+            if item.get("l1_summary"):
+                mem["l1_summary"] = item["l1_summary"]
+            results.append(mem)
         return results
 
     async def _read_content(self, uri: str) -> str:

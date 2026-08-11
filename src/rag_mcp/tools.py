@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rag_mcp._app import Context, get_app_context, init_config, mcp
 from rag_mcp.constants import SEARCH_STOP_WORDS
-from rag_mcp.formatting import format_results
+from rag_mcp.formatting import DetailLevel, format_results
+from rag_mcp.sidecars import (
+    CacheSidecarManager,
+    SidecarManager,
+    needs_l0,
+    needs_l1,
+)
 
 _search_name = f"{init_config.effective_server_name.replace('-', '_')}_search"
 
@@ -15,13 +23,15 @@ async def search(
     query: str,
     vector_store_id: str,
     top_k: int = 5,
+    detail_level: str = "L1",
 ):
     """Search a knowledge base for relevant documentation.
 
     Returns formatted markdown with source attribution that can be
     injected directly into the conversation context.  When PNG wrap
-    mode is enabled (RAG_MCP_PNG_WRAP=true), results are returned as
-    1568x1568 PNG image frames for dense context transfer.
+    mode is enabled (RAG_MCP_PNG_WRAP=true) and detail_level is "L2",
+    results are returned as 1568x1568 PNG image frames for dense
+    context transfer.
 
     When PNG wrap is active, results from each store are capped at
     RAG_MCP_PNG_MAX_CHARS_PER_STORE characters (default 4500) to
@@ -37,8 +47,16 @@ async def search(
             (required).  Read the ``knowledge://stores`` resource
             first to discover available store IDs.
         top_k: Maximum number of results to return.
+        detail_level: Content detail tier — "L0" (one-line abstract),
+            "L1" (overview paragraph, default), or "L2" (full content).
+            L0/L1 use cached summaries or extractive fallback. PNG wrap
+            only applies at L2.
     """
     app = get_app_context(ctx)
+
+    effective_level: DetailLevel = _resolve_detail_level(
+        detail_level, app.config.tiered_retrieval, app.config.default_detail_level
+    )
 
     stores = await app.backend.list_stores()
     if not stores:
@@ -57,13 +75,16 @@ async def search(
     )
 
     if results:
-        if app.config.png_wrap:
+        if app.config.tiered_retrieval and effective_level != "L2":
+            _enrich_with_sidecars(results, vector_store_id, app)
+
+        if app.config.png_wrap and effective_level == "L2":
             from rag_mcp.png_wrap import wrap_as_images
             budget = app.config.png_max_chars_per_store
         else:
             budget = app.config.max_response_chars
 
-        formatted = format_results(results, budget)
+        formatted = format_results(results, budget, detail_level=effective_level)
         unmatched = _find_unmatched_terms(query, results)
         if unmatched:
             terms = ", ".join(f'"{t}"' for t in unmatched)
@@ -74,11 +95,123 @@ async def search(
                 " Results above matched only the"
                 " other query terms."
             )
-        if app.config.png_wrap:
+        if app.config.png_wrap and effective_level == "L2":
             return wrap_as_images(formatted, max_pages=app.config.png_max_pages)
         return formatted
 
     return _build_recovery_hints(query, vector_store_id, stores)
+
+
+def _resolve_detail_level(
+    requested: str,
+    tiered_enabled: bool,
+    default: str,
+) -> DetailLevel:
+    """Normalize the detail_level parameter."""
+    if not tiered_enabled:
+        return "L2"
+    level = requested.upper()
+    if level in ("L0", "L1", "L2"):
+        return level  # type: ignore[return-value]
+    return default.upper()  # type: ignore[return-value]
+
+
+def _enrich_with_sidecars(
+    results: list[dict],
+    store_id: str,
+    app,
+) -> None:
+    """Attach sidecar summaries to results and schedule generation if missing."""
+    from rag_mcp._app import AppContext
+    app: AppContext  # type: ignore[no-redef]
+
+    if app.config.backend == "mock":
+        store_dir = Path(app.config.knowledge_dir) / store_id
+        if not store_dir.is_dir():
+            return
+        summaries_path = (
+            Path(app.config.summaries_dir)
+            if app.config.summaries_dir != ".summaries-cache"
+            else None
+        )
+        mgr = SidecarManager(store_dir, summaries_path)
+        for r in results:
+            source = r.get("source", "")
+            if not source:
+                continue
+            file_path = Path(source)
+            if not file_path.is_file():
+                file_path = store_dir / source
+            if not file_path.is_file():
+                continue
+            l0 = mgr.get_l0(file_path)
+            l1 = mgr.get_l1(file_path)
+            r.setdefault("metadata", {})
+            if l0:
+                r["metadata"]["l0_summary"] = l0
+            if l1:
+                r["metadata"]["l1_summary"] = l1
+            if (not l0 or not l1) and app.bg_summarizer:
+                text = r.get("text", "")
+                file_key = str(file_path)
+                if (not l0 and needs_l0(text)) or (not l1 and needs_l1(text)):
+                    _schedule_sidecar_generation(
+                        app, mgr, file_path, text, file_key
+                    )
+    else:
+        cache_dir = Path(app.config.summaries_dir)
+        cache_mgr = CacheSidecarManager(cache_dir)
+        for r in results:
+            doc_id = r.get("metadata", {}).get("doc_id", r.get("source", ""))
+            if not doc_id:
+                continue
+            l0 = cache_mgr.get_l0(doc_id)
+            l1 = cache_mgr.get_l1(doc_id)
+            r.setdefault("metadata", {})
+            if l0:
+                r["metadata"]["l0_summary"] = l0
+            if l1:
+                r["metadata"]["l1_summary"] = l1
+            if (not l0 or not l1) and app.bg_summarizer:
+                text = r.get("text", "")
+                if (not l0 and needs_l0(text)) or (not l1 and needs_l1(text)):
+                    _schedule_cache_generation(app, cache_mgr, doc_id, text)
+
+
+def _schedule_sidecar_generation(app, mgr: SidecarManager, file_path: Path, text: str, file_key: str) -> None:
+    """Wire background summarizer to persist sidecars for mock backend."""
+    from rag_mcp.summarizer import BackgroundSummarizer, Summarizer
+
+    summarizer_url = app.config.effective_summarizer_url
+    if not summarizer_url:
+        return
+
+    async def on_complete(key: str, l0: str | None, l1: str | None) -> None:
+        mgr.write_sidecars(Path(key), text, l0, l1)
+
+    bg = BackgroundSummarizer(
+        Summarizer(summarizer_url, app.config.summarizer_model),
+        on_complete,
+    )
+    bg.schedule(file_key, text)
+
+
+def _schedule_cache_generation(app, cache_mgr: CacheSidecarManager, doc_id: str, text: str) -> None:
+    """Wire background summarizer to persist cache for solr/confluence."""
+    from rag_mcp.summarizer import BackgroundSummarizer, Summarizer
+
+    summarizer_url = app.config.effective_summarizer_url
+    if not summarizer_url:
+        return
+
+    async def on_complete(key: str, l0: str | None, l1: str | None) -> None:
+        cache_mgr.write(key, l0, l1)
+
+    bg = BackgroundSummarizer(
+        Summarizer(summarizer_url, app.config.summarizer_model),
+        on_complete,
+    )
+    bg.schedule(doc_id, text)
 
 
 def _find_unmatched_terms(

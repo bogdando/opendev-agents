@@ -144,6 +144,7 @@ class TestSearchHintIntegration(unittest.TestCase):
         mock_config = mock.MagicMock()
         mock_config.max_response_chars = 50000
         mock_config.png_wrap = False
+        mock_config.tiered_retrieval = False
 
         mock_app = mock.MagicMock()
         mock_app.backend = mock_backend
@@ -282,6 +283,7 @@ class TestSearchPngWrap(unittest.TestCase):
         mock_config.png_wrap = True
         mock_config.png_max_pages = 3
         mock_config.png_max_chars_per_store = 4500
+        mock_config.tiered_retrieval = False
 
         mock_app = mock.MagicMock()
         mock_app.backend = mock_backend
@@ -323,6 +325,7 @@ class TestSearchPngWrap(unittest.TestCase):
         mock_config = mock.MagicMock()
         mock_config.max_response_chars = 50000
         mock_config.png_wrap = True
+        mock_config.tiered_retrieval = False
 
         mock_app = mock.MagicMock()
         mock_app.backend = mock_backend
@@ -348,6 +351,7 @@ class TestSearchPngWrap(unittest.TestCase):
         mock_config = mock.MagicMock()
         mock_config.max_response_chars = 50000
         mock_config.png_wrap = True
+        mock_config.tiered_retrieval = False
 
         mock_app = mock.MagicMock()
         mock_app.backend = mock_backend

@@ -76,6 +76,12 @@ class ServerConfig(BaseSettings):
     embedding_model: str = "nomic-embed-text"
     solr_search_mode: Literal["keyword", "semantic", "hybrid"] = "keyword"
 
+    tiered_retrieval: bool = False
+    default_detail_level: Literal["L0", "L1", "L2"] = "L1"
+    summarizer_url: str = ""
+    summarizer_model: str = "qwen2.5:7b"
+    summaries_dir: str = ".summaries-cache"
+
     memory_backend: Literal["local", "openviking", "none"] = "none"
     memory_dir: str = "./.memories"
     openviking_url: str = "http://127.0.0.1:1933"
@@ -115,6 +121,23 @@ class ServerConfig(BaseSettings):
         if self.memory_backend == "openviking":
             return "http://127.0.0.1:11434"
         return None
+
+    @property
+    def effective_summarizer_url(self) -> str | None:
+        """Resolve the summarizer endpoint for L0/L1 generation.
+
+        Priority:
+        1. Explicit RAG_MCP_SUMMARIZER_URL
+        2. Same as effective_embedding_url (assumes Ollama serves both)
+        3. None (summarization disabled, extractive fallback only)
+
+        By default this converges to the same Ollama instance that OV
+        uses for its ``vlm`` config — one Ollama serves embeddings and
+        chat completions for both knowledge sidecars and memory summaries.
+        """
+        if self.summarizer_url:
+            return self.summarizer_url
+        return self.effective_embedding_url
 
     @property
     def proxy_url(self) -> str | None:

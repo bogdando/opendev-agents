@@ -4,10 +4,18 @@ alwaysApply: true
 globs: []
 ---
 
-MANDATORY When query, tail >50 lines, search any
-log source, always pipe the output through "<command> | <optional filters> | txt2png"
-and fetch PNG files by posted links. Never dump raw log text directly into context.
-Do that for all logs related commands, also with grep/awk/sed etc filters, without exception:
-system journal and logs, OpenShift, OpenStack, Must-gather, sos-reports,
-any application log file or stdout stream. If a command does not support piping (interactive
-pager, -f follow mode blocking), use --no-pager or redirect to a temp file first, then pipe.
+MANDATORY When query, tail >50 lines, searching logs, always pipe the output through
+"<command> | <optional filters> | txt2png" and fetch 1st, last, middle PNG frames by
+posted links. Inspect more frames, only if really needed. Never dump raw log text
+directly into context. Do that for all logs related commands, also with grep/awk/sed
+etc filters of system journal and logs, must-gather, sos-reports, an app stdout stream.
+Prefer aggregating multiple commands outputs via files before piping it to txt2png.
+If a command does not support piping (interactive pager, -f follow mode blocking),
+use --no-pager or redirect to a temp file first. If a command output size cannot be
+guessed (-o yaml/json) always aggregate multiple commands outputs to a file first.
+
+NEVER use txt2png when:
+- Reading or inspecting non-log files (source code, configs, YAML, JSON, manifests)
+- Running commands that produce brief outputs, like ip, git, ls, cat of
+  small files, helm, env, echo, pwd
+- The expected output is under ~50 lines and there is no other steps/commands to aggregate its outputs

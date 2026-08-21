@@ -9,7 +9,7 @@ from rag_mcp.memory import VALID_CATEGORIES
 _prefix = init_config.effective_server_name.replace("-", "_")
 
 
-@mcp.tool(name=f"{_prefix}_recall")
+@mcp.tool(name=f"{_prefix}_recall", output_schema=None)
 async def recall(
     ctx: Context,
     query: str,
@@ -103,7 +103,7 @@ def _resolve_detail_level(
     return default.upper()  # type: ignore[return-value]
 
 
-@mcp.tool(name=f"{_prefix}_remember")
+@mcp.tool(name=f"{_prefix}_remember", output_schema=None)
 async def remember(
     ctx: Context,
     content: str,

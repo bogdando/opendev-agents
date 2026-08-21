@@ -9,7 +9,7 @@ description = "Thin MCP server exposing RAG knowledge as searchable tools and UR
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
-    "fastmcp>=3.2.0",
+    "fastmcp>=3.4.7",
     "httpx[http2]>=0.28.0",
     "Pillow>=10.0.0",
     "pydantic-settings>=2.13.1",

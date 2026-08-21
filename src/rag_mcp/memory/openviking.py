@@ -8,7 +8,7 @@ Requires a running OV server with embedding model configured.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -123,7 +123,7 @@ class OpenVikingMemoryBackend:
         if category not in VALID_CATEGORIES:
             category = "context"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         timestamp = now.strftime("%Y%m%dT%H%M%SZ")
         uri = f"{self._memory_prefix()}/{category}/{timestamp}.md"
 

@@ -8,12 +8,11 @@ the race condition where Cursor's tool discovery could miss `search`.
 
 from __future__ import annotations
 
-from rag_mcp._app import AppContext, get_app_context, init_config, mcp  # noqa: F401
-
 # --- Tool registration (order matters for Cursor discovery) ---
 # 1. search — ALWAYS available, core functionality
-import rag_mcp.tools  # noqa: F401, E402
+import rag_mcp.tools
+from rag_mcp._app import AppContext, get_app_context, init_config, mcp  # noqa: F401
 
 # 2. recall/remember — only when a memory backend is active
 if init_config.memory_backend != "none":
-    import rag_mcp.memory_tools  # noqa: F401, E402
+    import rag_mcp.memory_tools  # noqa: F401

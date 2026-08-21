@@ -41,8 +41,8 @@ class AppContext:
     backend: BackendProtocol
     config: ServerConfig
     memory: MemoryProtocol | None = None
-    embeddings: "EmbeddingClient | None" = None
-    bg_summarizer: "BackgroundSummarizer | None" = None
+    embeddings: EmbeddingClient | None = None
+    bg_summarizer: BackgroundSummarizer | None = None
 
 
 def get_app_context(ctx: Context) -> AppContext:

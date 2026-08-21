@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -65,7 +65,7 @@ class MockBackend:
             )
             freshness = (
                 datetime.fromtimestamp(
-                    mtime, tz=timezone.utc
+                    mtime, tz=UTC
                 ).isoformat()
                 if mtime
                 else "unknown"
@@ -124,7 +124,7 @@ class MockBackend:
         store_id: str,
         files: list[Path],
         top_k: int,
-        embeddings: "EmbeddingClient",
+        embeddings: EmbeddingClient,
     ) -> list[dict]:
         """Semantic search: embed query + all docs, rank by cosine similarity.
 

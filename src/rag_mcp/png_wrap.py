@@ -22,7 +22,8 @@ import re
 import textwrap
 from typing import TYPE_CHECKING
 
-from PIL import Image as PILImage, ImageDraw, ImageFont
+from PIL import Image as PILImage
+from PIL import ImageDraw, ImageFont
 
 if TYPE_CHECKING:
     from fastmcp.utilities.types import Image
@@ -192,7 +193,7 @@ def estimate_chars_per_frame() -> int:
     return lines_per_frame * wrap_width
 
 
-def wrap_as_images(text: str, *, max_pages: int = 3) -> list["Image"]:
+def wrap_as_images(text: str, *, max_pages: int = 3) -> list[Image]:
     """Convert text into a list of FastMCP Image objects (PNG frames).
 
     Truncates output to *max_pages* frames to bound vision-token cost.

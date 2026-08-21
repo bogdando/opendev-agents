@@ -13,10 +13,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import httpx
-
 from okp_mcp.content import doc_uri  # pyright: ignore[reportMissingImports]
 from okp_mcp.formatting import annotate_result  # pyright: ignore[reportMissingImports]
-from okp_mcp.solr import _clean_query, _solr_query  # pyright: ignore[reportMissingImports]
+from okp_mcp.solr import (  # pyright: ignore[reportMissingImports]
+    _clean_query,
+    _solr_query,
+)
 
 if TYPE_CHECKING:
     from rag_mcp.embeddings import EmbeddingClient
@@ -148,7 +150,7 @@ class SolrBackend:
         query: str,
         store_id: str,
         top_k: int,
-        embeddings: "EmbeddingClient",
+        embeddings: EmbeddingClient,
     ) -> list[dict] | None:
         """Attempt semantic or hybrid search via Solr vector endpoints.
 

@@ -457,7 +457,7 @@ class TestRecallL2PngWrap(unittest.TestCase):
 
     def test_l0_recall_skips_png(self):
         """L0 recall never triggers PNG wrap."""
-        result, mock_wrap = self._run_recall(detail_level="L0", png_wrap=True)
+        _result, mock_wrap = self._run_recall(detail_level="L0", png_wrap=True)
         mock_wrap.assert_not_called()
 
     def test_l2_recall_no_png_when_disabled(self):

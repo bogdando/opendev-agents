@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -121,7 +121,7 @@ class LocalMemoryBackend:
         return list(candidates_by_uri.values())
 
     async def _rerank_with_embeddings(
-        self, candidates: list[dict], query: str, embeddings: "EmbeddingClient"
+        self, candidates: list[dict], query: str, embeddings: EmbeddingClient
     ) -> list[dict] | None:
         """Rerank candidates by cosine similarity to the query embedding."""
         from rag_mcp.embeddings import cosine_similarity
@@ -153,7 +153,7 @@ class LocalMemoryBackend:
             category = "context"
 
         cat_dir = self._ensure_dir(category)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         timestamp = now.strftime("%Y%m%dT%H%M%SZ")
         content_hash = hashlib.sha256(content.encode()).hexdigest()[:8]
         filename = f"{timestamp}_{content_hash}.md"

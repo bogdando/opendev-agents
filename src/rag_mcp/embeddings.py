@@ -8,7 +8,6 @@ search without crashing.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import httpx
 
@@ -26,7 +25,7 @@ class EmbeddingClient:
             self._headers["Authorization"] = f"Bearer {api_key}"
         self._client = httpx.AsyncClient(timeout=30.0)
 
-    async def embed(self, texts: list[str]) -> Optional[list[list[float]]]:
+    async def embed(self, texts: list[str]) -> list[list[float]] | None:
         """Embed a batch of texts. Returns None on failure (graceful fallback)."""
         try:
             resp = await self._client.post(
@@ -41,7 +40,7 @@ class EmbeddingClient:
             logger.warning("Embedding request failed: %s", exc)
             return None
 
-    async def embed_query(self, text: str) -> Optional[list[float]]:
+    async def embed_query(self, text: str) -> list[float] | None:
         """Embed a single query string."""
         result = await self.embed([text])
         return result[0] if result else None

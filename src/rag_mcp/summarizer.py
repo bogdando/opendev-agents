@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable, Coroutine
+from collections.abc import Callable, Coroutine
 
 import httpx
 
@@ -102,7 +102,7 @@ class BackgroundSummarizer:
             l0 = await self._summarizer.generate_l0(text)
             l1 = await self._summarizer.generate_l1(text)
             await self._on_complete(file_key, l0, l1)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error(
                 "Background summarization failed for %s: %s", file_key, exc
             )

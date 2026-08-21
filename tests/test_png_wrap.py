@@ -21,11 +21,11 @@ except ImportError:
     # Force fresh import in case earlier test left a stale entry
     sys.modules.pop("rag_mcp.png_wrap", None)
 
-from rag_mcp.png_wrap import (  # noqa: E402
+from rag_mcp.png_wrap import (
+    _ANSI_RE,
     FONT_SIZE,
     FRAME_SIZE,
     LINE_SPACING,
-    _ANSI_RE,
     minify_text,
 )
 

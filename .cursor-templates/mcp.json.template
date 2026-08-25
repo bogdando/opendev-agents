@@ -7,6 +7,7 @@
         "RAG_MCP_KNOWLEDGE_DIR": "/opt/go/src/github.com/bogdando/opendev-agents/knowledge",
         "RAG_MCP_TIERED_RETRIEVAL": "false",
         "RAG_MCP_SUMMARIZER_URL": "http://127.0.0.1:11434",
+        "RAG_MCP_SUMMARIZER_MODEL": "qwen2.5:7b"
         "RAG_MCP_PNG_WRAP": "true",
         "RAG_MCP_PNG_MAX_PAGES": "${RAG_MCP_PNG_MAX_PAGES}",
         "RAG_MCP_PNG_MAX_CHARS_PER_STORE": "${RAG_MCP_PNG_MAX_CHARS_PER_STORE}",
@@ -27,6 +28,7 @@
         "RAG_MCP_BACKEND": "confluence",
         "RAG_MCP_TIERED_RETRIEVAL": "false",
         "RAG_MCP_SUMMARIZER_URL": "http://127.0.0.1:11434",
+        "RAG_MCP_SUMMARIZER_MODEL": "qwen2.5:7b"
         "RAG_MCP_PNG_WRAP": "false",
         "RAG_MCP_PNG_MAX_PAGES": "${RAG_MCP_PNG_MAX_PAGES}",
         "RAG_MCP_PNG_MAX_CHARS_PER_STORE": "${RAG_MCP_PNG_MAX_CHARS_PER_STORE}",
@@ -43,6 +45,7 @@
         "RAG_MCP_BACKEND": "solr",
         "RAG_MCP_TIERED_RETRIEVAL": "false",
         "RAG_MCP_SUMMARIZER_URL": "http://127.0.0.1:11434",
+        "RAG_MCP_SUMMARIZER_MODEL": "qwen2.5:7b"
         "RAG_MCP_PNG_WRAP": "true",
         "RAG_MCP_PNG_MAX_PAGES": "${RAG_MCP_PNG_MAX_PAGES}",
         "RAG_MCP_PNG_MAX_CHARS_PER_STORE": "${RAG_MCP_PNG_MAX_CHARS_PER_STORE}",

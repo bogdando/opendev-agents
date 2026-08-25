@@ -1,0 +1,12 @@
+---
+description: Context retrieval via search tools for grounded knowledge topics
+alwaysApply: true
+globs: []
+---
+
+MANDATORY always check all `rag-knowledge*` mcp instances when searching:
+* Read available <prefix>_search, <prefix>_recall, <prefix>_remember tool names
+  and store IDs from knowledge://stores of rag-knowledge* mcp
+* Pick best-match stores (at least one per an mcp)
+* Sequentally call the <prefix>_search with picked store IDs and follow recovery hints
+

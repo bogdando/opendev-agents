@@ -395,7 +395,7 @@ class TestRecallDedup(unittest.TestCase):
             agent_id="test-agent",
             dedup_turns=5,
         )
-        search_response = {"status": "ok", "result": {"memories": []}}
+        search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -411,6 +411,43 @@ class TestRecallDedup(unittest.TestCase):
         self.assertEqual("context", payload["mode"])
         self.assertEqual("cu-abc123", payload["session_id"])
         self.assertEqual(5, payload["dedup_turns"])
+        self.assertNotIn("target_uri", payload)
+
+    def test_recall_context_mode_parses_entries(self):
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=5,
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/item.md",
+                    "category": "memories",
+                    "score": 0.85,
+                    "detail": "overview",
+                    "text": "The context mode text content",
+                    "origin": "self",
+                }],
+                "stats": {"dedup": {"turns": 5, "status": "ok", "cooled": 0}},
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall("query", session_id="s1"))
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("The context mode text content", results[0]["content"])
+        self.assertEqual(0.85, results[0]["score"])
 
     def test_recall_no_context_face_without_session_id(self):
         backend = OpenVikingMemoryBackend(
@@ -435,6 +472,7 @@ class TestRecallDedup(unittest.TestCase):
         self.assertNotIn("mode", payload)
         self.assertNotIn("session_id", payload)
         self.assertNotIn("dedup_turns", payload)
+        self.assertIn("target_uri", payload)
 
     def test_recall_no_context_face_when_dedup_turns_zero(self):
         backend = OpenVikingMemoryBackend(

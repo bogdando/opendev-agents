@@ -62,31 +62,34 @@ class OpenVikingMemoryBackend:
     async def recall(
         self, query: str, category: str = "", top_k: int = 5, **kwargs
     ) -> list[dict]:
-        """Semantic search over stored memories via OV's context face.
+        """Semantic search over stored memories.
 
-        Uses ``mode:"context"`` with ``dedup_turns`` to avoid
-        re-injecting the same memory across consecutive turns.
-        When *detail_level* is passed (via kwargs), requests the
-        appropriate content tier from OV.  OV returns L0/L1 summaries
-        (``abstract``/``overview``) when ``auto_generate_l0/l1`` is on.
+        When *session_id* is available and ``dedup_turns > 0``, uses
+        OV's ``mode:"context"`` face which suppresses memories already
+        returned in recent turns.  Context mode requires omitting
+        ``target_uri`` and returns ``entries`` (with ``text`` field)
+        instead of ``memories`` (with ``content`` field).
+
+        Falls back to plain search (with ``target_uri``) when session
+        dedup is disabled or no session_id is provided.
         """
-        detail_level = kwargs.get("detail_level", "L2")
         session_id = kwargs.get("session_id", "")
+        use_context = bool(self._dedup_turns and session_id)
+
         target_uri = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
             target_uri = f"{target_uri}/{category}"
 
         payload: dict = {
             "query": query,
-            "target_uri": target_uri,
             "limit": top_k,
         }
-        if self._dedup_turns and session_id:
+        if use_context:
             payload["mode"] = "context"
             payload["session_id"] = session_id
             payload["dedup_turns"] = self._dedup_turns
-        if detail_level in ("L0", "L1"):
-            payload["detail_level"] = detail_level.lower()
+        else:
+            payload["target_uri"] = target_uri
 
         try:
             async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
@@ -101,12 +104,19 @@ class OpenVikingMemoryBackend:
             logger.error("OpenViking recall failed: %s", e)
             return []
 
-        results: list[dict] = []
         result_data = data.get("result", data)
-        memories = result_data.get("memories", result_data.get("results", []))
-        for item in memories:
+
+        if use_context:
+            items = result_data.get("entries", [])
+        else:
+            items = result_data.get(
+                "memories", result_data.get("results", [])
+            )
+
+        results: list[dict] = []
+        for item in items:
             uri = item.get("uri", "")
-            content = item.get("content", "")
+            content = item.get("text") or item.get("content") or ""
             if not content and uri:
                 content = await self._read_content(uri)
             cat = item.get("category") or _category_from_uri(uri)

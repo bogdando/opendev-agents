@@ -135,14 +135,10 @@ def _enrich_with_sidecars(
             else None
         )
         mgr = SidecarManager(store_dir, summaries_path)
+        knowledge_dir = Path(app.config.knowledge_dir)
         for r in results:
-            source = r.get("source", "")
-            if not source:
-                continue
-            file_path = Path(source)
-            if not file_path.is_file():
-                file_path = store_dir / source
-            if not file_path.is_file():
+            file_path = _resolve_mock_file_path(r, knowledge_dir, store_dir)
+            if file_path is None:
                 continue
             l0 = mgr.get_l0(file_path)
             l1 = mgr.get_l1(file_path)
@@ -176,6 +172,47 @@ def _enrich_with_sidecars(
                 text = r.get("text", "")
                 if (not l0 and needs_l0(text)) or (not l1 and needs_l1(text)):
                     _schedule_cache_generation(app, cache_mgr, doc_id, text)
+
+
+def _resolve_mock_file_path(
+    result: dict,
+    knowledge_dir: Path,
+    store_dir: Path,
+) -> Path | None:
+    """Locate the original knowledge file for a mock search hit.
+
+    Mock ``source`` is relative to *knowledge_dir* (the backend root),
+    e.g. ``nova-docs/admin/scheduling.rst``. Joining that onto
+    *store_dir* double-prefixes the store id and misses the file.
+    Prefer ``metadata.file_path`` when present.
+    """
+    candidates: list[Path] = []
+    meta_path = result.get("metadata", {}).get("file_path")
+    if meta_path:
+        candidates.append(Path(meta_path))
+    source = result.get("source") or ""
+    if source:
+        src = Path(source)
+        candidates.append(src)
+        candidates.append(knowledge_dir / source)
+        candidates.append(store_dir / source)
+        if len(src.parts) > 1 and src.parts[0] == store_dir.name:
+            candidates.append(store_dir.joinpath(*src.parts[1:]))
+
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not path.is_file():
+            continue
+        try:
+            path.resolve().relative_to(store_dir.resolve())
+        except (ValueError, OSError):
+            continue
+        return path
+    return None
 
 
 def _schedule_sidecar_generation(app, mgr: SidecarManager, file_path: Path, text: str, file_key: str) -> None:

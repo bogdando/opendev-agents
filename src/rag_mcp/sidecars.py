@@ -10,12 +10,26 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _L0_TOKEN_THRESHOLD = 100
 _L1_CHAR_THRESHOLD = 2000
+_SAFE_CACHE_KEY = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def cache_key(doc_id: str) -> str:
+    """Map a document id to a single path component under the cache dir.
+
+    Simple ids (``doc123``) are kept for readability. URLs and paths are
+    hashed so they cannot create nested directories or escape the cache
+    root (``https://.../solutions/3109111`` → 32-char hex).
+    """
+    if doc_id and _SAFE_CACHE_KEY.fullmatch(doc_id):
+        return doc_id
+    return hashlib.sha256(doc_id.encode()).hexdigest()[:32]
 
 
 def content_hash(text: str) -> str:
@@ -140,8 +154,11 @@ class CacheSidecarManager:
     def get_l1(self, doc_id: str) -> str | None:
         return self._read(doc_id, "l1")
 
+    def _path(self, doc_id: str, level: str) -> Path:
+        return self._dir / f"{cache_key(doc_id)}.{level}"
+
     def _read(self, doc_id: str, level: str) -> str | None:
-        path = self._dir / f"{doc_id}.{level}"
+        path = self._path(doc_id, level)
         if path.exists():
             try:
                 return path.read_text(encoding="utf-8")
@@ -151,11 +168,15 @@ class CacheSidecarManager:
 
     def write(self, doc_id: str, l0: str | None, l1: str | None) -> None:
         if l0 is not None:
-            (self._dir / f"{doc_id}.l0").write_text(l0, encoding="utf-8")
+            p = self._path(doc_id, "l0")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(l0, encoding="utf-8")
         if l1 is not None:
-            (self._dir / f"{doc_id}.l1").write_text(l1, encoding="utf-8")
+            p = self._path(doc_id, "l1")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(l1, encoding="utf-8")
 
     def has_cache(self, doc_id: str) -> bool:
-        return (self._dir / f"{doc_id}.l0").exists() or (
-            self._dir / f"{doc_id}.l1"
+        return self._path(doc_id, "l0").exists() or self._path(
+            doc_id, "l1"
         ).exists()

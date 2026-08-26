@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from rag_mcp.tools import (
     _build_recovery_hints,
     _find_unmatched_terms,
+    _resolve_mock_file_path,
     search,
 )
 
@@ -366,6 +369,54 @@ class TestSearchPngWrap(unittest.TestCase):
             out = asyncio.run(search(mock_ctx, "q", "nonexistent"))
         self.assertIsInstance(out, str)
         self.assertIn("Unknown store", out)
+
+
+class TestResolveMockFilePath(unittest.TestCase):
+    """Mock source is relative to knowledge_dir, not store_dir."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.knowledge_dir = Path(self._tmpdir.name)
+        self.store_dir = self.knowledge_dir / "nova-docs"
+        self.doc = self.store_dir / "admin" / "scheduling.rst"
+        self.doc.parent.mkdir(parents=True)
+        self.doc.write_text("scheduler content\n")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_source_relative_to_knowledge_dir(self):
+        result = {"source": "nova-docs/admin/scheduling.rst", "metadata": {}}
+        resolved = _resolve_mock_file_path(
+            result, self.knowledge_dir, self.store_dir
+        )
+        self.assertEqual(resolved, self.doc)
+
+    def test_store_dir_join_would_miss(self):
+        """The old join (store_dir / source) does not exist."""
+        source = "nova-docs/admin/scheduling.rst"
+        self.assertFalse((self.store_dir / source).is_file())
+        result = {"source": source, "metadata": {}}
+        self.assertEqual(
+            _resolve_mock_file_path(result, self.knowledge_dir, self.store_dir),
+            self.doc,
+        )
+
+    def test_metadata_file_path_preferred(self):
+        result = {
+            "source": "wrong/path.rst",
+            "metadata": {"file_path": str(self.doc)},
+        }
+        resolved = _resolve_mock_file_path(
+            result, self.knowledge_dir, self.store_dir
+        )
+        self.assertEqual(resolved, self.doc)
+
+    def test_missing_file_returns_none(self):
+        result = {"source": "nova-docs/missing.rst", "metadata": {}}
+        self.assertIsNone(
+            _resolve_mock_file_path(result, self.knowledge_dir, self.store_dir)
+        )
 
 
 if __name__ == "__main__":

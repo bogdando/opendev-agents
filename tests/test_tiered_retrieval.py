@@ -15,6 +15,7 @@ from rag_mcp.formatting import (
 from rag_mcp.sidecars import (
     CacheSidecarManager,
     SidecarManager,
+    cache_key,
     content_hash,
     needs_l0,
     needs_l1,
@@ -275,6 +276,35 @@ class TestCacheSidecarManager(unittest.TestCase):
         mgr.write("doc789", None, "just l1")
         self.assertIsNone(mgr.get_l0("doc789"))
         self.assertEqual(mgr.get_l1("doc789"), "just l1")
+
+    def test_url_doc_id_writes_flat_hashed_file(self):
+        url = "https://access.redhat.com/solutions/3109111"
+        mgr = CacheSidecarManager(self.cache_dir)
+        mgr.write(url, "L0 abstract", "L1 overview")
+
+        key = cache_key(url)
+        self.assertNotIn("/", key)
+        self.assertNotIn(":", key)
+        self.assertTrue((self.cache_dir / f"{key}.l0").is_file())
+        self.assertEqual(mgr.get_l0(url), "L0 abstract")
+        self.assertEqual(mgr.get_l1(url), "L1 overview")
+        self.assertTrue(mgr.has_cache(url))
+        nested = self.cache_dir / "https:"
+        self.assertFalse(nested.exists())
+
+    def test_cache_key_keeps_simple_ids(self):
+        self.assertEqual(cache_key("doc123"), "doc123")
+        self.assertEqual(cache_key("okp.article_1"), "okp.article_1")
+
+    def test_cache_key_hashes_urls_and_paths(self):
+        url = "https://access.redhat.com/solutions/3109111"
+        hashed = cache_key(url)
+        self.assertEqual(len(hashed), 32)
+        self.assertEqual(hashed, cache_key(url))
+        self.assertNotEqual(hashed, cache_key(url + "/"))
+        traversal = cache_key("../etc/passwd")
+        self.assertEqual(len(traversal), 32)
+        self.assertNotIn("..", traversal)
 
 
 class TestSummarizer(unittest.TestCase):

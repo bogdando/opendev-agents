@@ -64,8 +64,14 @@ def _build_memory_dict(
         "score": item.get("score"),
     }
 
-    l0 = item.get("l0_summary") or item.get("abstract") or ""
-    l1 = item.get("l1_summary") or item.get("overview") or ""
+    raw_l0 = _strip_frontmatter(
+        item.get("l0_summary") or item.get("abstract") or ""
+    )
+    raw_l1 = _strip_frontmatter(
+        item.get("l1_summary") or item.get("overview") or ""
+    )
+    l0 = raw_l0 if len(raw_l0) < 500 else ""
+    l1 = raw_l1 if len(raw_l1) < 3000 else ""
 
     if ov_detail == "abstract":
         l0 = l0 or raw_text

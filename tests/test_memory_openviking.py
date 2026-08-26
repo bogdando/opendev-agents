@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from rag_mcp.memory.openviking import OpenVikingMemoryBackend
+from rag_mcp.memory.openviking import OpenVikingMemoryBackend, _category_from_uri
 
 
 def _mock_response(json_data, status_code=200):
@@ -728,6 +728,59 @@ class TestListMemories(unittest.TestCase):
             results = asyncio.run(self.backend.list_memories())
 
         self.assertEqual([], results)
+
+
+class TestCategoryFromUri(unittest.TestCase):
+
+    def test_extracts_learning(self):
+        uri = "viking://user/default/memories/learning/20260826.md"
+        self.assertEqual("learning", _category_from_uri(uri))
+
+    def test_extracts_workflow(self):
+        uri = "viking://user/u/memories/workflow/file.md"
+        self.assertEqual("workflow", _category_from_uri(uri))
+
+    def test_unknown_segment_falls_back(self):
+        uri = "viking://user/u/memories/bogus/file.md"
+        self.assertEqual("context", _category_from_uri(uri))
+
+    def test_no_memories_segment_falls_back(self):
+        uri = "viking://user/u/resources/file.md"
+        self.assertEqual("context", _category_from_uri(uri))
+
+
+class TestRecallCategoryFallback(unittest.TestCase):
+
+    def test_recall_extracts_category_from_uri_when_ov_returns_empty(self):
+        """OV returns category='' — category should be inferred from URI."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/learning/item.md",
+                    "score": 0.90,
+                    "content": "some content",
+                    "category": "",
+                }],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall("query"))
+
+        self.assertEqual("learning", results[0]["category"])
 
 
 class TestMemoryPrefix(unittest.TestCase):

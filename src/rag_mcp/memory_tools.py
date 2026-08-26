@@ -46,12 +46,15 @@ async def recall(
         detail_level, app.config.tiered_retrieval, app.config.default_detail_level
     )
 
+    session_id = getattr(ctx, "client_id", "") or ""
+
     memories = await app.memory.recall(
         query,
         category=category,
         top_k=top_k,
         embeddings=app.embeddings,
         detail_level=effective_level,
+        session_id=session_id,
     )
 
     if not memories:

@@ -17,6 +17,19 @@ from rag_mcp.memory import VALID_CATEGORIES
 logger = logging.getLogger(__name__)
 
 
+def _category_from_uri(uri: str) -> str:
+    """Extract category from a viking memory URI, e.g.
+    ``viking://user/X/memories/learning/file.md`` → ``learning``.
+    Falls back to ``context``.
+    """
+    parts = uri.split("/memories/")
+    if len(parts) == 2:
+        segment = parts[1].split("/")[0]
+        if segment in VALID_CATEGORIES:
+            return segment
+    return "context"
+
+
 class OpenVikingMemoryBackend:
     """Memory backend that delegates to OpenViking's HTTP API."""
 
@@ -96,9 +109,10 @@ class OpenVikingMemoryBackend:
             content = item.get("content", "")
             if not content and uri:
                 content = await self._read_content(uri)
+            cat = item.get("category") or _category_from_uri(uri)
             mem = {
                 "content": content,
-                "category": item.get("category", "context"),
+                "category": cat,
                 "saved_at": item.get("saved_at", ""),
                 "uri": uri,
                 "score": item.get("score"),

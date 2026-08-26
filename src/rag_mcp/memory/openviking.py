@@ -91,10 +91,12 @@ class OpenVikingMemoryBackend:
                 "saved_at": item.get("saved_at", ""),
                 "uri": uri,
             }
-            if item.get("l0_summary"):
-                mem["l0_summary"] = item["l0_summary"]
-            if item.get("l1_summary"):
-                mem["l1_summary"] = item["l1_summary"]
+            l0 = item.get("l0_summary") or item.get("abstract") or ""
+            l1 = item.get("l1_summary") or item.get("overview") or ""
+            if l0:
+                mem["l0_summary"] = l0
+            if l1:
+                mem["l1_summary"] = l1
             results.append(mem)
         return results
 

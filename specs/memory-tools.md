@@ -229,8 +229,13 @@ For Solr/Confluence backends, cache lives in `RAG_MCP_SUMMARIES_DIR`:
 #### OV memory tiered recall
 
 Adding a `vlm` section + `auto_generate_l0`/`auto_generate_l1` enables the
-summarizer. Each `remember()` call triggers L0 (~100 tokens) and L1 (~2k
-tokens) generation. Subsequent `recall()` returns compact summaries first,
+summarizer. OV's VLM only triggers for the `add_resource` pipeline (resources
+namespace), not for `content/write` (memories namespace). RAG MCP uses a
+**dual-write** approach: after `content/write` stores the memory, a
+fire-and-forget `temp_upload` + `add_resource` writes to
+`resources/memories/` so VLM generates L0 abstracts. During `recall()`, a
+secondary search on `resources/memories/` enriches results with VLM-generated
+`l0_summary` values. Subsequent `recall()` returns compact summaries first,
 expanding to full content (L2) only when needed.
 
 The `vlm` config key accepts any OpenAI-compatible model. The summarizer

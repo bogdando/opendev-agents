@@ -58,6 +58,13 @@ class TestRemember(unittest.TestCase):
             user="testuser",
             agent_id="test-agent",
         )
+        self._vlm_patcher = patch.object(
+            self.backend, "_trigger_vlm", new_callable=AsyncMock,
+        )
+        self._vlm_patcher.start()
+
+    def tearDown(self):
+        self._vlm_patcher.stop()
 
     def test_remember_calls_content_write(self):
         no_dup = _no_dup_response()
@@ -142,6 +149,13 @@ class TestWriteTimeDedup(unittest.TestCase):
             agent_id="test-agent",
             dedup_threshold=0.85,
         )
+        self._vlm_patcher = patch.object(
+            self.backend, "_trigger_vlm", new_callable=AsyncMock,
+        )
+        self._vlm_patcher.start()
+
+    def tearDown(self):
+        self._vlm_patcher.stop()
 
     def test_remember_skips_write_when_duplicate_found(self):
         dup_resp = _dup_response(score=0.92)
@@ -201,7 +215,8 @@ class TestWriteTimeDedup(unittest.TestCase):
         )
         write_resp = _mock_response({"status": "ok"})
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch.object(backend, "_trigger_vlm", new_callable=AsyncMock):
             client_instance = AsyncMock()
             client_instance.post.return_value = write_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
@@ -211,7 +226,6 @@ class TestWriteTimeDedup(unittest.TestCase):
             result = asyncio.run(backend.remember("content", "learning"))
 
         self.assertNotIn("deduplicated", result)
-        # Only write call, no dedup search
         self.assertEqual(1, client_instance.post.call_count)
 
     def test_dedup_search_error_does_not_block_write(self):
@@ -264,6 +278,172 @@ class TestWriteTimeDedup(unittest.TestCase):
         search_call = client_instance.post.call_args_list[0]
         query = search_call[1]["json"]["query"]
         self.assertTrue(query.startswith("---\ncategory: workflow\n---\n\n"))
+
+
+class TestTriggerVlm(unittest.TestCase):
+    """Test the fire-and-forget VLM trigger via temp_upload + add_resource."""
+
+    def setUp(self):
+        self.backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            vlm_enabled=True,
+        )
+
+    def test_trigger_vlm_calls_temp_upload_and_add_resource(self):
+        upload_resp = _mock_response({
+            "status": "ok",
+            "result": {"temp_file_id": "upload_abc123.md"},
+        })
+        add_resp = _mock_response({"status": "ok"})
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.side_effect = [upload_resp, add_resp]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(self.backend._trigger_vlm(
+                "full content", "learning", "20260826T180000Z.md",
+            ))
+
+        self.assertEqual(2, client_instance.post.call_count)
+        upload_call = client_instance.post.call_args_list[0]
+        self.assertIn("/api/v1/resources/temp_upload", upload_call[0][0])
+        add_call = client_instance.post.call_args_list[1]
+        self.assertIn("/api/v1/resources", add_call[0][0])
+        add_json = add_call[1]["json"]
+        self.assertEqual("upload_abc123.md", add_json["temp_file_id"])
+        self.assertIn("resources/memories/learning/20260826T180000Z.md", add_json["to"])
+        self.assertFalse(add_json["wait"])
+
+    def test_trigger_vlm_swallows_http_error(self):
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.side_effect = httpx.ConnectError("refused")
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(self.backend._trigger_vlm(
+                "content", "context", "test.md",
+            ))
+
+
+class TestVlmAbstractEnrichment(unittest.TestCase):
+    """Test recall enriches memory results with VLM abstracts from resources."""
+
+    def setUp(self):
+        self.backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=0,
+            vlm_enabled=True,
+        )
+
+    def test_recall_enriches_l0_from_resource_abstracts(self):
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/learning/doc.md",
+                    "score": 0.8,
+                    "content": "Full content here",
+                    "abstract": "",
+                }],
+                "resources": [],
+            },
+        }
+        resource_response = {
+            "status": "ok",
+            "result": {
+                "resources": [{
+                    "uri": "viking://user/testuser/resources/memories/learning/doc.md/doc.md",
+                    "score": 0.7,
+                    "abstract": "VLM-generated one-line abstract",
+                }],
+            },
+        }
+        mock_search = _mock_response(search_response)
+        mock_resource = _mock_response(resource_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.side_effect = [mock_search, mock_resource]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(self.backend.recall("query", detail_level="L0"))
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("VLM-generated one-line abstract", results[0]["l0_summary"])
+
+    def test_recall_skips_resource_search_when_abstracts_present(self):
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/learning/doc.md",
+                    "score": 0.8,
+                    "content": "Full content",
+                    "abstract": "Already has abstract",
+                }],
+                "resources": [],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(self.backend.recall("query", detail_level="L0"))
+
+        self.assertEqual("Already has abstract", results[0]["l0_summary"])
+        self.assertEqual(1, client_instance.post.call_count)
+
+
+    def test_vlm_disabled_skips_resource_search(self):
+        """When vlm_enabled=False, recall does no resource enrichment."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=0,
+            vlm_enabled=False,
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/learning/doc.md",
+                    "score": 0.8,
+                    "content": "Full content here",
+                }],
+                "resources": [],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall("query", detail_level="L0"))
+
+        self.assertEqual(1, len(results))
+        self.assertNotIn("l0_summary", results[0])
+        self.assertEqual(1, client_instance.post.call_count)
 
 
 class TestRecall(unittest.TestCase):

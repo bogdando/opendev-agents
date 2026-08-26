@@ -3,18 +3,30 @@
 Delegates recall/remember to a running OpenViking instance via its
 HTTP API. OV handles embedding-based semantic search and deduplication.
 Requires a running OV server with embedding model configured.
+
+After writing a memory via ``content/write``, a parallel write to the
+``resources/memories/`` namespace is triggered so that OV's VLM pipeline
+generates L0/L1 abstracts (``content/write`` never triggers VLM for
+the ``memories/`` namespace).
 """
 
 from __future__ import annotations
 
+import asyncio
+import io
 import logging
 from datetime import UTC, datetime
 
 import httpx
 
+from rag_mcp.formatting import _L0_MAX_TOKENS, _L1_MAX_CHARS
 from rag_mcp.memory import VALID_CATEGORIES
 
 logger = logging.getLogger(__name__)
+
+_L0_MAX_CHARS = _L0_MAX_TOKENS * 5
+_VLM_ABSTRACT_MAX_CHARS = _L1_MAX_CHARS
+_DEDUP_QUERY_MAX_CHARS = _L1_MAX_CHARS
 
 
 def _category_from_uri(uri: str) -> str:
@@ -70,8 +82,8 @@ def _build_memory_dict(
     raw_l1 = _strip_frontmatter(
         item.get("l1_summary") or item.get("overview") or ""
     )
-    l0 = raw_l0 if len(raw_l0) < 500 else ""
-    l1 = raw_l1 if len(raw_l1) < 3000 else ""
+    l0 = raw_l0 if len(raw_l0) < _L0_MAX_CHARS else ""
+    l1 = raw_l1 if len(raw_l1) < _L1_MAX_CHARS else ""
 
     if ov_detail == "abstract":
         l0 = l0 or raw_text
@@ -105,6 +117,7 @@ class OpenVikingMemoryBackend:
         api_key: str = "",
         dedup_threshold: float = 0.85,
         dedup_turns: int = 5,
+        vlm_enabled: bool = False,
     ) -> None:
         self._url = url.rstrip("/")
         self._account = account
@@ -112,6 +125,7 @@ class OpenVikingMemoryBackend:
         self._agent_id = agent_id
         self._dedup_threshold = dedup_threshold
         self._dedup_turns = dedup_turns
+        self._vlm_enabled = vlm_enabled
         self._headers: dict[str, str] = {
             "X-OpenViking-Account": account,
             "X-OpenViking-User": user,
@@ -121,6 +135,9 @@ class OpenVikingMemoryBackend:
 
     def _memory_prefix(self) -> str:
         return f"viking://user/{self._user}/memories"
+
+    def _resource_prefix(self) -> str:
+        return f"viking://user/{self._user}/resources/memories"
 
     async def recall(
         self, query: str, category: str = "", top_k: int = 5, **kwargs
@@ -185,6 +202,21 @@ class OpenVikingMemoryBackend:
                 "memories", result_data.get("results", [])
             )
 
+        vlm_abstracts: dict[str, str] = {}
+        if self._vlm_enabled:
+            vlm_abstracts = self._extract_resource_abstracts(
+                result_data.get("resources", [])
+            )
+            if not vlm_abstracts and not use_context and items:
+                needs_vlm = any(
+                    not (it.get("abstract") or it.get("l0_summary"))
+                    for it in items
+                )
+                if needs_vlm:
+                    vlm_abstracts = await self._fetch_vlm_abstracts(
+                        query, category, top_k
+                    )
+
         results: list[dict] = []
         for item in items:
             uri = item.get("uri", "")
@@ -197,6 +229,11 @@ class OpenVikingMemoryBackend:
             mem = _build_memory_dict(
                 raw_text, ov_detail, item, uri, cat, detail_level,
             )
+            if not mem.get("l0_summary") and vlm_abstracts:
+                fname = uri.rsplit("/", 1)[-1] if uri else ""
+                vlm_l0 = vlm_abstracts.get(fname, "")
+                if vlm_l0:
+                    mem["l0_summary"] = vlm_l0
             fetch_full = mem.pop("_fetch_full", False)
             if not mem["content"] and uri and (detail_level == "L2" or fetch_full):
                 mem["content"] = await self._read_content(uri)
@@ -209,6 +246,56 @@ class OpenVikingMemoryBackend:
             if has_text:
                 results.append(mem)
         return results
+
+    async def _fetch_vlm_abstracts(
+        self, query: str, category: str, top_k: int,
+    ) -> dict[str, str]:
+        """Secondary search on ``resources/memories/`` for VLM abstracts."""
+        resource_target = self._resource_prefix()
+        if category and category in VALID_CATEGORIES:
+            resource_target = f"{resource_target}/{category}"
+        try:
+            async with httpx.AsyncClient(timeout=5.0, http2=True) as client:
+                resp = await client.post(
+                    f"{self._url}/api/v1/search/search",
+                    json={
+                        "query": query,
+                        "target_uri": resource_target,
+                        "limit": top_k,
+                    },
+                    headers=self._headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPError:
+            return {}
+        return self._extract_resource_abstracts(
+            data.get("result", {}).get("resources", [])
+        )
+
+    @staticmethod
+    def _extract_resource_abstracts(
+        resources: list[dict],
+    ) -> dict[str, str]:
+        """Build a filename-to-abstract map from resource search results.
+
+        Resources created by the dual-write VLM trigger live under
+        ``resources/memories/<cat>/<file>.md/<file>.md``.  The trailing
+        filename matches the memory file.  Only non-trivial VLM-generated
+        abstracts (shorter than the full content) are kept.
+        """
+        abstracts: dict[str, str] = {}
+        for res in resources:
+            uri = res.get("uri", "")
+            if "/resources/memories/" not in uri:
+                continue
+            raw = _strip_frontmatter(res.get("abstract", ""))
+            if not raw or len(raw) > _VLM_ABSTRACT_MAX_CHARS:
+                continue
+            fname = uri.rsplit("/", 1)[-1] if uri else ""
+            if fname and fname not in abstracts:
+                abstracts[fname] = raw
+        return abstracts
 
     async def _read_content(self, uri: str) -> str:
         """Fetch the actual content of a memory file from OV."""
@@ -248,7 +335,7 @@ class OpenVikingMemoryBackend:
 
         stub = f"---\ncategory: {category}\n---\n\n"
         payload = {
-            "query": (stub + content)[:2000],
+            "query": (stub + content)[:_DEDUP_QUERY_MAX_CHARS],
             "target_uri": target_uri,
             "limit": 1,
         }
@@ -278,6 +365,47 @@ class OpenVikingMemoryBackend:
             )
             return best
         return None
+
+    async def _trigger_vlm(
+        self, full_content: str, category: str, filename: str,
+    ) -> None:
+        """Upload content to ``resources/memories/`` via add_resource.
+
+        OV's VLM pipeline only runs for resources, not memories.  This
+        fire-and-forget call creates a parallel resource so that VLM
+        generates L0/L1 abstracts that recall can later pick up.
+        """
+        resource_uri = f"{self._resource_prefix()}/{category}/{filename}"
+        try:
+            async with httpx.AsyncClient(timeout=30.0, http2=True) as client:
+                upload_resp = await client.post(
+                    f"{self._url}/api/v1/resources/temp_upload",
+                    files={"file": (filename, io.BytesIO(full_content.encode()))},
+                    headers=self._headers,
+                )
+                upload_resp.raise_for_status()
+                temp_id = (
+                    upload_resp.json()
+                    .get("result", {})
+                    .get("temp_file_id", "")
+                )
+                if not temp_id:
+                    logger.warning("VLM trigger: temp_upload returned no ID")
+                    return
+
+                add_resp = await client.post(
+                    f"{self._url}/api/v1/resources",
+                    json={
+                        "temp_file_id": temp_id,
+                        "to": resource_uri,
+                        "wait": False,
+                    },
+                    headers=self._headers,
+                )
+                add_resp.raise_for_status()
+                logger.info("VLM trigger: queued %s", resource_uri)
+        except httpx.HTTPError as exc:
+            logger.warning("VLM trigger failed for %s: %s", resource_uri, exc)
 
     async def remember(
         self, content: str, category: str = "context"
@@ -336,6 +464,10 @@ class OpenVikingMemoryBackend:
             }
 
         logger.info("Memory stored in OpenViking: %s", uri)
+        if self._vlm_enabled:
+            asyncio.ensure_future(
+                self._trigger_vlm(frontmatter + content, category, f"{timestamp}.md")
+            )
         return {
             "uri": uri,
             "category": category,

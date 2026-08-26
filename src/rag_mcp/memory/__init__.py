@@ -66,6 +66,7 @@ def get_memory_backend(config: ServerConfig) -> MemoryProtocol | None:
             api_key=config.openviking_api_key,
             dedup_threshold=config.openviking_dedup_threshold,
             dedup_turns=config.openviking_dedup_turns,
+            vlm_enabled=config.tiered_retrieval,
         )
 
     raise ValueError(f"Unknown memory backend: {config.memory_backend!r}")

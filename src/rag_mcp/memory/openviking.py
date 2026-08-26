@@ -27,11 +27,15 @@ class OpenVikingMemoryBackend:
         user: str = "developer",
         agent_id: str = "rag-mcp-server",
         api_key: str = "",
+        dedup_threshold: float = 0.85,
+        dedup_turns: int = 5,
     ) -> None:
         self._url = url.rstrip("/")
         self._account = account
         self._user = user
         self._agent_id = agent_id
+        self._dedup_threshold = dedup_threshold
+        self._dedup_turns = dedup_turns
         self._headers: dict[str, str] = {
             "X-OpenViking-Account": account,
             "X-OpenViking-User": user,
@@ -45,13 +49,16 @@ class OpenVikingMemoryBackend:
     async def recall(
         self, query: str, category: str = "", top_k: int = 5, **kwargs
     ) -> list[dict]:
-        """Semantic search over stored memories via OV's search API.
+        """Semantic search over stored memories via OV's context face.
 
+        Uses ``mode:"context"`` with ``dedup_turns`` to avoid
+        re-injecting the same memory across consecutive turns.
         When *detail_level* is passed (via kwargs), requests the
-        appropriate content tier from OV. OV returns L0/L1 summaries
-        if ``auto_generate_l0/l1`` is enabled in its config.
+        appropriate content tier from OV.  OV returns L0/L1 summaries
+        (``abstract``/``overview``) when ``auto_generate_l0/l1`` is on.
         """
         detail_level = kwargs.get("detail_level", "L2")
+        session_id = kwargs.get("session_id", "")
         target_uri = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
             target_uri = f"{target_uri}/{category}"
@@ -61,6 +68,10 @@ class OpenVikingMemoryBackend:
             "target_uri": target_uri,
             "limit": top_k,
         }
+        if self._dedup_turns and session_id:
+            payload["mode"] = "context"
+            payload["session_id"] = session_id
+            payload["dedup_turns"] = self._dedup_turns
         if detail_level in ("L0", "L1"):
             payload["detail_level"] = detail_level.lower()
 
@@ -90,6 +101,7 @@ class OpenVikingMemoryBackend:
                 "category": item.get("category", "context"),
                 "saved_at": item.get("saved_at", ""),
                 "uri": uri,
+                "score": item.get("score"),
             }
             l0 = item.get("l0_summary") or item.get("abstract") or ""
             l1 = item.get("l1_summary") or item.get("overview") or ""
@@ -118,12 +130,74 @@ class OpenVikingMemoryBackend:
         except httpx.HTTPError:
             return ""
 
+    async def _find_duplicate(
+        self, content: str, category: str
+    ) -> dict | None:
+        """Search for an existing memory similar to *content*.
+
+        Returns the best match if its score exceeds the dedup threshold,
+        otherwise ``None``.
+        """
+        if self._dedup_threshold <= 0:
+            return None
+
+        target_uri = self._memory_prefix()
+        if category and category in VALID_CATEGORIES:
+            target_uri = f"{target_uri}/{category}"
+
+        payload = {
+            "query": content[:2000],
+            "target_uri": target_uri,
+            "limit": 1,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
+                resp = await client.post(
+                    f"{self._url}/api/v1/search/search",
+                    json=payload,
+                    headers=self._headers,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPError:
+            return None
+
+        result_data = data.get("result", data)
+        memories = result_data.get("memories", result_data.get("results", []))
+        if not memories:
+            return None
+
+        best = memories[0]
+        score = best.get("score", 0)
+        if score >= self._dedup_threshold:
+            logger.info(
+                "Write-time dedup: score %.3f >= %.3f for %s",
+                score, self._dedup_threshold, best.get("uri", "?"),
+            )
+            return best
+        return None
+
     async def remember(
         self, content: str, category: str = "context"
     ) -> dict:
-        """Store a memory in OpenViking via the content/write API."""
+        """Store a memory in OpenViking via the content/write API.
+
+        Before writing, searches for semantically similar existing
+        memories.  If a match scores above ``dedup_threshold``, the
+        write is skipped and the existing URI is returned with
+        ``deduplicated=True``.
+        """
         if category not in VALID_CATEGORIES:
             category = "context"
+
+        dup = await self._find_duplicate(content, category)
+        if dup:
+            return {
+                "uri": dup.get("uri", ""),
+                "category": category,
+                "saved_at": dup.get("saved_at", ""),
+                "deduplicated": True,
+            }
 
         now = datetime.now(UTC)
         timestamp = now.strftime("%Y%m%dT%H%M%SZ")

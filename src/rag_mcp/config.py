@@ -90,6 +90,16 @@ class ServerConfig(BaseSettings):
     openviking_user: str = "default"
     openviking_agent_id: str = "rag-mcp-server"
     openviking_api_key: str = ""
+    openviking_dedup_threshold: float = Field(
+        default=0.85, ge=0.0, le=1.0,
+        description="Cosine similarity threshold for write-time dedup. "
+        "Memories scoring above this against existing content are skipped.",
+    )
+    openviking_dedup_turns: int = Field(
+        default=5, ge=0,
+        description="Cross-turn recall dedup cooldown (OV context face). "
+        "0 disables. A 'turn' counts individual messages.",
+    )
 
     @property
     def effective_server_name(self) -> str:

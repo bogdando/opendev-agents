@@ -162,6 +162,12 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_EMBEDDING_URL` | | Embedding endpoint base URL (OpenAI-compatible `POST {url}/v1/embeddings`). Auto-derived as `http://127.0.0.1:11434` when `RAG_MCP_MEMORY_BACKEND=openviking`. Empty/unset disables embeddings unless OpenViking auto-derive applies |
 | `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | **Ollama/Llama Stack model id** for `POST /v1/embeddings` (not a search strategy). Must match what the embed service has loaded (`ollama pull nomic-embed-text`). Mismatched model name fallbacks to keyword mode |
 | `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | **Solr/OKP retrieval strategy only** (ignored by mock/confluence): `keyword` (BM25), `semantic` (vector), or `hybrid` (BM25 + vector). Needs a working embedding client for `semantic`/`hybrid`. Templates default OKP to `hybrid` |
+| `RAG_MCP_TIERED_RETRIEVAL` | `false` | Enable tiered L0/L1/L2 detail levels for `search()` and `recall()` |
+| `RAG_MCP_DEFAULT_DETAIL_LEVEL` | `L1` | Default detail level when tiered retrieval is enabled |
+| `RAG_MCP_SUMMARIZER_URL` | (from `embedding_url`) | Chat completions endpoint for L0/L1 generation (e.g. Ollama or vLLM) |
+| `RAG_MCP_SUMMARIZER_MODEL` | `qwen2.5:7b` | Model for summarization (any chat-capable model) |
+| `RAG_MCP_SUMMARIZER_TIMEOUT` | `180` | HTTP timeout in seconds for summarizer requests. Increase for slow backends (e.g. vLLM on constrained GPUs) |
+| `RAG_MCP_SUMMARIES_DIR` | `.summaries-cache` | Local directory for cached L0/L1 sidecars (solr/confluence backends) |
 
 ### Supported search backends
 

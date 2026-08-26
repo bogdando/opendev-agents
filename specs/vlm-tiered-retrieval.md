@@ -287,6 +287,7 @@ configuration.
 | `RAG_MCP_DEFAULT_DETAIL_LEVEL` | `L1` | Default detail level for search/recall |
 | `RAG_MCP_SUMMARIZER_URL` | (from `embedding_url`) | Ollama endpoint for L0/L1 generation (`/v1/chat/completions`) |
 | `RAG_MCP_SUMMARIZER_MODEL` | `qwen2.5:7b` | Model for summarization (any chat-capable model) |
+| `RAG_MCP_SUMMARIZER_TIMEOUT` | `180` | HTTP timeout in seconds for summarizer requests. Increase for slow backends (e.g. vLLM on constrained GPUs like L4) |
 | `RAG_MCP_SUMMARIES_DIR` | `.summaries-cache` | Local directory for cached L0/L1 sidecars (both mock and solr) |
 
 When `RAG_MCP_TIERED_RETRIEVAL=false` (default), behavior is unchanged —
@@ -454,7 +455,7 @@ backends return full content (L2) as before.
 - `src/rag_mcp/formatting.py` — `TieredFormatter` with L0/L1/L2
   rendering (extractive fallback when sidecars missing)
 - `src/rag_mcp/config.py` — new tiered retrieval config fields
-  (`SUMMARIZER_URL`, `SUMMARIZER_MODEL`, `SUMMARIES_DIR`)
+  (`SUMMARIZER_URL`, `SUMMARIZER_MODEL`, `SUMMARIZER_TIMEOUT`, `SUMMARIES_DIR`)
 - `src/rag_mcp/_app.py` — wire summarizer into AppContext
 - `src/rag_mcp/backends/solr.py` — check/trigger sidecar generation for
   search results

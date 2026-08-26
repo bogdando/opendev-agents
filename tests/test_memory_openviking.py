@@ -690,6 +690,44 @@ class TestDetailTierRecall(unittest.TestCase):
         self.assertEqual("A longer overview paragraph about the topic.", results[0]["l1_summary"])
         client_instance.get.assert_not_called()
 
+    def test_overview_frontmatter_only_fetches_full(self):
+        """Overview entry with only YAML frontmatter falls back to _read_content."""
+        backend = self._make_backend()
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/x.md",
+                    "score": 0.7, "detail": "overview",
+                    "text": "---\ncategory: learning\nsaved_at: 2026-06-06\nagent_id: test\n---",
+                    "category": "memories",
+                }],
+                "stats": {},
+            },
+        }
+        read_response = {
+            "status": "ok",
+            "result": "---\ncategory: learning\n---\n\nActual content of the memory.",
+        }
+        mock_search = _mock_response(search_response)
+        mock_read = _mock_response(read_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.get.return_value = mock_read
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall(
+                "query", session_id="s1", detail_level="L1",
+            ))
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("Actual content of the memory.", results[0]["content"])
+        client_instance.get.assert_called_once()
+
     def test_plain_search_no_detail_field(self):
         """Non-context recall (no detail field) behaves like full."""
         backend = OpenVikingMemoryBackend(

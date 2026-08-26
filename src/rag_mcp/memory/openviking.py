@@ -80,6 +80,8 @@ def _build_memory_dict(
     elif ov_detail == "overview":
         l1 = l1 or raw_text
         mem["content"] = raw_text
+        if not mem["content"] and not l1:
+            mem["_fetch_full"] = True
     else:
         mem["content"] = raw_text
 
@@ -195,7 +197,8 @@ class OpenVikingMemoryBackend:
             mem = _build_memory_dict(
                 raw_text, ov_detail, item, uri, cat, detail_level,
             )
-            if not mem["content"] and uri and detail_level == "L2":
+            fetch_full = mem.pop("_fetch_full", False)
+            if not mem["content"] and uri and (detail_level == "L2" or fetch_full):
                 mem["content"] = await self._read_content(uri)
 
             has_text = (

@@ -30,6 +30,16 @@ def _category_from_uri(uri: str) -> str:
     return "context"
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Remove YAML front-matter (``---...---``) from stored content."""
+    if not text.startswith("---"):
+        return text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return text
+    return text[end + 4:].lstrip("\n")
+
+
 def _build_memory_dict(
     raw_text: str,
     ov_detail: str,
@@ -170,7 +180,9 @@ class OpenVikingMemoryBackend:
         results: list[dict] = []
         for item in items:
             uri = item.get("uri", "")
-            raw_text = item.get("text") or item.get("content") or ""
+            raw_text = _strip_frontmatter(
+                item.get("text") or item.get("content") or ""
+            )
             cat = item.get("category") or _category_from_uri(uri)
             ov_detail = item.get("detail", "")
 
@@ -180,7 +192,13 @@ class OpenVikingMemoryBackend:
             if not mem["content"] and uri and detail_level == "L2":
                 mem["content"] = await self._read_content(uri)
 
-            results.append(mem)
+            has_text = (
+                mem["content"]
+                or mem.get("l0_summary")
+                or mem.get("l1_summary")
+            )
+            if has_text:
+                results.append(mem)
         return results
 
     async def _read_content(self, uri: str) -> str:
@@ -196,8 +214,9 @@ class OpenVikingMemoryBackend:
                 data = resp.json()
                 result = data.get("result", "")
                 if isinstance(result, str):
-                    return result
-                return result.get("content", "") if isinstance(result, dict) else ""
+                    return _strip_frontmatter(result)
+                raw = result.get("content", "") if isinstance(result, dict) else ""
+                return _strip_frontmatter(raw)
         except httpx.HTTPError:
             return ""
 

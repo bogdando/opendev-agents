@@ -79,8 +79,14 @@ def _memories_to_results(memories: list[dict]) -> list[dict]:
     for mem in memories:
         cat = mem.get("category", "context")
         saved = mem.get("saved_at", "unknown")
+        text = (
+            mem.get("content")
+            or mem.get("l1_summary")
+            or mem.get("l0_summary")
+            or ""
+        )
         results.append({
-            "text": mem.get("content", ""),
+            "text": text,
             "source": f"memory/{cat}/{saved}",
             "metadata": {
                 "title": f"Memory [{cat}] — {saved}",

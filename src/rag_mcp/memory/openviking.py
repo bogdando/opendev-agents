@@ -30,6 +30,51 @@ def _category_from_uri(uri: str) -> str:
     return "context"
 
 
+def _build_memory_dict(
+    raw_text: str,
+    ov_detail: str,
+    item: dict,
+    uri: str,
+    category: str,
+    detail_level: str,
+) -> dict:
+    """Build a memory result dict, mapping OV's ``detail`` tier field.
+
+    OV context-mode entries include ``detail`` (``"abstract"``,
+    ``"overview"``, or ``"full"``).  When the served tier is lower
+    than full, ``raw_text`` is the summary — route it to the
+    appropriate sidecar and leave ``content`` empty (to be filled
+    by ``_read_content`` when L2 is requested).
+    """
+    mem: dict = {
+        "content": "",
+        "category": category,
+        "saved_at": item.get("saved_at", ""),
+        "uri": uri,
+        "score": item.get("score"),
+    }
+
+    l0 = item.get("l0_summary") or item.get("abstract") or ""
+    l1 = item.get("l1_summary") or item.get("overview") or ""
+
+    if ov_detail == "abstract":
+        l0 = l0 or raw_text
+        if detail_level == "L1":
+            mem["content"] = raw_text
+    elif ov_detail == "overview":
+        l1 = l1 or raw_text
+        mem["content"] = raw_text
+    else:
+        mem["content"] = raw_text
+
+    if l0:
+        mem["l0_summary"] = l0
+    if l1:
+        mem["l1_summary"] = l1
+
+    return mem
+
+
 class OpenVikingMemoryBackend:
     """Memory backend that delegates to OpenViking's HTTP API."""
 
@@ -72,8 +117,17 @@ class OpenVikingMemoryBackend:
 
         Falls back to plain search (with ``target_uri``) when session
         dedup is disabled or no session_id is provided.
+
+        OV's context-mode entries carry a ``detail`` field indicating
+        which tier was served (``"abstract"``, ``"overview"``, or
+        ``"full"``).  This is mapped to the ``l0_summary`` /
+        ``l1_summary`` sidecars so the downstream formatter renders
+        the correct tier without re-truncating.  Full content is
+        fetched via ``_read_content()`` only when the caller requests
+        L2 and the entry was served at a lower tier.
         """
         session_id = kwargs.get("session_id", "")
+        detail_level = kwargs.get("detail_level", "L2")
         use_context = bool(self._dedup_turns and session_id)
 
         target_uri = self._memory_prefix()
@@ -116,23 +170,16 @@ class OpenVikingMemoryBackend:
         results: list[dict] = []
         for item in items:
             uri = item.get("uri", "")
-            content = item.get("text") or item.get("content") or ""
-            if not content and uri:
-                content = await self._read_content(uri)
+            raw_text = item.get("text") or item.get("content") or ""
             cat = item.get("category") or _category_from_uri(uri)
-            mem = {
-                "content": content,
-                "category": cat,
-                "saved_at": item.get("saved_at", ""),
-                "uri": uri,
-                "score": item.get("score"),
-            }
-            l0 = item.get("l0_summary") or item.get("abstract") or ""
-            l1 = item.get("l1_summary") or item.get("overview") or ""
-            if l0:
-                mem["l0_summary"] = l0
-            if l1:
-                mem["l1_summary"] = l1
+            ov_detail = item.get("detail", "")
+
+            mem = _build_memory_dict(
+                raw_text, ov_detail, item, uri, cat, detail_level,
+            )
+            if not mem["content"] and uri and detail_level == "L2":
+                mem["content"] = await self._read_content(uri)
+
             results.append(mem)
         return results
 

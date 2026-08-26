@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from rag_mcp.memory.openviking import OpenVikingMemoryBackend, _category_from_uri
+from rag_mcp.memory.openviking import (
+    OpenVikingMemoryBackend,
+    _build_memory_dict,
+    _category_from_uri,
+)
 
 
 def _mock_response(json_data, status_code=200):
@@ -447,6 +451,7 @@ class TestRecallDedup(unittest.TestCase):
 
         self.assertEqual(1, len(results))
         self.assertEqual("The context mode text content", results[0]["content"])
+        self.assertEqual("The context mode text content", results[0]["l1_summary"])
         self.assertEqual(0.85, results[0]["score"])
 
     def test_recall_no_context_face_without_session_id(self):
@@ -495,6 +500,227 @@ class TestRecallDedup(unittest.TestCase):
 
         payload = client_instance.post.call_args[1]["json"]
         self.assertNotIn("mode", payload)
+
+
+class TestBuildMemoryDict(unittest.TestCase):
+    """Unit tests for _build_memory_dict tier routing."""
+
+    def _item(self, **overrides):
+        base = {"saved_at": "2026-08-26", "score": 0.9}
+        base.update(overrides)
+        return base
+
+    def test_abstract_detail_at_l0(self):
+        mem = _build_memory_dict(
+            "Short abstract text", "abstract", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L0",
+        )
+        self.assertEqual("Short abstract text", mem["l0_summary"])
+        self.assertEqual("", mem["content"])
+
+    def test_abstract_detail_at_l1(self):
+        mem = _build_memory_dict(
+            "Short abstract text", "abstract", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L1",
+        )
+        self.assertEqual("Short abstract text", mem["l0_summary"])
+        self.assertEqual("Short abstract text", mem["content"])
+
+    def test_abstract_detail_at_l2(self):
+        """At L2, abstract text goes to l0_summary; content left empty for _read_content."""
+        mem = _build_memory_dict(
+            "Short abstract text", "abstract", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L2",
+        )
+        self.assertEqual("Short abstract text", mem["l0_summary"])
+        self.assertEqual("", mem["content"])
+
+    def test_overview_detail_sets_l1(self):
+        mem = _build_memory_dict(
+            "Longer overview paragraph", "overview", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L1",
+        )
+        self.assertEqual("Longer overview paragraph", mem["l1_summary"])
+        self.assertEqual("Longer overview paragraph", mem["content"])
+        self.assertNotIn("l0_summary", mem)
+
+    def test_full_detail_no_sidecars(self):
+        mem = _build_memory_dict(
+            "Full content here", "full", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L2",
+        )
+        self.assertEqual("Full content here", mem["content"])
+        self.assertNotIn("l0_summary", mem)
+        self.assertNotIn("l1_summary", mem)
+
+    def test_no_detail_field_treated_as_full(self):
+        mem = _build_memory_dict(
+            "Content without detail", "", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L2",
+        )
+        self.assertEqual("Content without detail", mem["content"])
+
+    def test_existing_abstract_field_preferred_over_text(self):
+        item = self._item(abstract="VLM abstract")
+        mem = _build_memory_dict(
+            "Overview text", "abstract", item,
+            "viking://u/memories/learning/x.md", "learning", "L0",
+        )
+        self.assertEqual("VLM abstract", mem["l0_summary"])
+
+    def test_existing_overview_field_preferred_over_text(self):
+        item = self._item(overview="VLM overview")
+        mem = _build_memory_dict(
+            "Full text", "overview", item,
+            "viking://u/memories/learning/x.md", "learning", "L1",
+        )
+        self.assertEqual("VLM overview", mem["l1_summary"])
+
+
+class TestDetailTierRecall(unittest.TestCase):
+    """Integration tests: recall with detail tier mapping end-to-end."""
+
+    def _make_backend(self):
+        return OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=5,
+        )
+
+    def test_l0_recall_abstract_entry_no_read_content(self):
+        """L0 recall with abstract entry should NOT fetch full content."""
+        backend = self._make_backend()
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/x.md",
+                    "score": 0.8, "detail": "abstract",
+                    "text": "One-line abstract",
+                    "category": "memories",
+                }],
+                "stats": {},
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall(
+                "query", session_id="s1", detail_level="L0",
+            ))
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("One-line abstract", results[0]["l0_summary"])
+        self.assertEqual("", results[0]["content"])
+        client_instance.get.assert_not_called()
+
+    def test_l2_recall_abstract_entry_fetches_full(self):
+        """L2 recall with abstract entry should fetch full content."""
+        backend = self._make_backend()
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/x.md",
+                    "score": 0.8, "detail": "abstract",
+                    "text": "One-line abstract",
+                    "category": "memories",
+                }],
+                "stats": {},
+            },
+        }
+        read_response = {
+            "status": "ok",
+            "result": "Full memory content from OV",
+        }
+        mock_search = _mock_response(search_response)
+        mock_read = _mock_response(read_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.get.return_value = mock_read
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall(
+                "query", session_id="s1", detail_level="L2",
+            ))
+
+        self.assertEqual("Full memory content from OV", results[0]["content"])
+        self.assertEqual("One-line abstract", results[0]["l0_summary"])
+
+    def test_l1_recall_overview_entry_uses_text_as_content(self):
+        """L1 recall with overview entry uses text as both content and l1_summary."""
+        backend = self._make_backend()
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/x.md",
+                    "score": 0.8, "detail": "overview",
+                    "text": "A longer overview paragraph about the topic.",
+                    "category": "memories",
+                }],
+                "stats": {},
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall(
+                "query", session_id="s1", detail_level="L1",
+            ))
+
+        self.assertEqual("A longer overview paragraph about the topic.", results[0]["content"])
+        self.assertEqual("A longer overview paragraph about the topic.", results[0]["l1_summary"])
+        client_instance.get.assert_not_called()
+
+    def test_plain_search_no_detail_field(self):
+        """Non-context recall (no detail field) behaves like full."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=0,
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/learning/x.md",
+                    "score": 0.8,
+                    "content": "Full raw content from plain search",
+                }],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall("query", detail_level="L0"))
+
+        self.assertEqual("Full raw content from plain search", results[0]["content"])
+        self.assertNotIn("l0_summary", results[0])
 
 
 class TestRecallFieldMapping(unittest.TestCase):

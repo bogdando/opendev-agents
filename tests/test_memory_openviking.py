@@ -244,6 +244,23 @@ class TestWriteTimeDedup(unittest.TestCase):
         query = search_call[1]["json"]["query"]
         self.assertEqual(2000, len(query))
 
+    def test_dedup_query_includes_frontmatter_stub(self):
+        no_dup = _no_dup_response()
+        write_resp = _mock_response({"status": "ok"})
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.side_effect = [no_dup, write_resp]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(self.backend.remember("some content", "workflow"))
+
+        search_call = client_instance.post.call_args_list[0]
+        query = search_call[1]["json"]["query"]
+        self.assertTrue(query.startswith("---\ncategory: workflow\n---\n\n"))
+
 
 class TestRecall(unittest.TestCase):
 

@@ -136,7 +136,9 @@ class OpenVikingMemoryBackend:
         """Search for an existing memory similar to *content*.
 
         Returns the best match if its score exceeds the dedup threshold,
-        otherwise ``None``.
+        otherwise ``None``.  The query includes a frontmatter stub so
+        embeddings align with the stored documents (OV embeds the full
+        file including YAML front-matter).
         """
         if self._dedup_threshold <= 0:
             return None
@@ -145,8 +147,9 @@ class OpenVikingMemoryBackend:
         if category and category in VALID_CATEGORIES:
             target_uri = f"{target_uri}/{category}"
 
+        stub = f"---\ncategory: {category}\n---\n\n"
         payload = {
-            "query": content[:2000],
+            "query": (stub + content)[:2000],
             "target_uri": target_uri,
             "limit": 1,
         }

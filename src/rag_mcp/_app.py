@@ -71,7 +71,10 @@ async def _app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
         summarizer_url = config.effective_summarizer_url
         if summarizer_url:
             from rag_mcp.summarizer import BackgroundSummarizer, Summarizer
-            summarizer = Summarizer(summarizer_url, config.summarizer_model)
+            summarizer = Summarizer(
+                summarizer_url, config.summarizer_model,
+                timeout=config.summarizer_timeout,
+            )
 
             async def _noop_callback(
                 file_key: str, l0: str | None, l1: str | None

@@ -24,19 +24,26 @@ _L1_SYSTEM = (
 )
 
 
+_L0_MAX_TOKENS = 150
+_L1_MAX_TOKENS = 1024
+
+
 class Summarizer:
     """Generates L0/L1 text summaries via chat completions."""
 
-    def __init__(self, base_url: str, model: str) -> None:
+    def __init__(
+        self, base_url: str, model: str, timeout: float = 180.0
+    ) -> None:
         self._url = f"{base_url.rstrip('/')}/v1/chat/completions"
         self._model = model
-        self._client = httpx.AsyncClient(timeout=60.0)
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def generate_l0(self, text: str) -> str | None:
         """Generate a one-sentence abstract (~100 tokens)."""
         return await self._chat(
             system=_L0_SYSTEM,
             user=f"Summarize:\n\n{text[:4000]}",
+            max_tokens=_L0_MAX_TOKENS,
         )
 
     async def generate_l1(self, text: str) -> str | None:
@@ -44,9 +51,12 @@ class Summarizer:
         return await self._chat(
             system=_L1_SYSTEM,
             user=f"Summarize:\n\n{text[:8000]}",
+            max_tokens=_L1_MAX_TOKENS,
         )
 
-    async def _chat(self, system: str, user: str) -> str | None:
+    async def _chat(
+        self, system: str, user: str, max_tokens: int = _L1_MAX_TOKENS
+    ) -> str | None:
         """Call the chat completions endpoint."""
         try:
             resp = await self._client.post(
@@ -58,6 +68,7 @@ class Summarizer:
                         {"role": "user", "content": user},
                     ],
                     "temperature": 0.0,
+                    "max_tokens": max_tokens,
                 },
             )
             resp.raise_for_status()

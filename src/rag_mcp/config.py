@@ -80,6 +80,7 @@ class ServerConfig(BaseSettings):
     default_detail_level: Literal["L0", "L1", "L2"] = "L1"
     summarizer_url: str = ""
     summarizer_model: str = "qwen2.5:7b"
+    summarizer_timeout: float = 180.0
     summaries_dir: str = ".summaries-cache"
 
     memory_backend: Literal["local", "openviking", "none"] = "none"

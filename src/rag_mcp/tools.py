@@ -227,7 +227,10 @@ def _schedule_sidecar_generation(app, mgr: SidecarManager, file_path: Path, text
         mgr.write_sidecars(Path(key), text, l0, l1)
 
     bg = BackgroundSummarizer(
-        Summarizer(summarizer_url, app.config.summarizer_model),
+        Summarizer(
+            summarizer_url, app.config.summarizer_model,
+            timeout=app.config.summarizer_timeout,
+        ),
         on_complete,
     )
     bg.schedule(file_key, text)
@@ -245,7 +248,10 @@ def _schedule_cache_generation(app, cache_mgr: CacheSidecarManager, doc_id: str,
         cache_mgr.write(key, l0, l1)
 
     bg = BackgroundSummarizer(
-        Summarizer(summarizer_url, app.config.summarizer_model),
+        Summarizer(
+            summarizer_url, app.config.summarizer_model,
+            timeout=app.config.summarizer_timeout,
+        ),
         on_complete,
     )
     bg.schedule(doc_id, text)

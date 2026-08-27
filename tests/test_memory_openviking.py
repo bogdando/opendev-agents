@@ -659,6 +659,60 @@ class TestRecallDedup(unittest.TestCase):
         self.assertNotIn("dedup_turns", payload)
         self.assertIn("target_uri", payload)
 
+    def test_recall_fixed_client_id_same_session(self):
+        """Same client_id on consecutive calls uses same dedup window."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=5,
+        )
+        search_response = {"status": "ok", "result": {"entries": []}}
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(backend.recall("query", session_id="fixed-id"))
+            asyncio.run(backend.recall("query", session_id="fixed-id"))
+
+        calls = client_instance.post.call_args_list
+        self.assertEqual(2, len(calls))
+        for call in calls:
+            payload = call[1]["json"]
+            self.assertEqual("fixed-id", payload["session_id"])
+            self.assertEqual("context", payload["mode"])
+
+    def test_recall_different_client_ids_separate_sessions(self):
+        """Different client_ids create independent dedup windows."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=5,
+        )
+        search_response = {"status": "ok", "result": {"entries": []}}
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(backend.recall("query", session_id="session-A"))
+            asyncio.run(backend.recall("query", session_id="session-B"))
+
+        calls = client_instance.post.call_args_list
+        payloads = [c[1]["json"] for c in calls]
+        self.assertEqual("session-A", payloads[0]["session_id"])
+        self.assertEqual("session-B", payloads[1]["session_id"])
+
     def test_recall_no_context_face_when_dedup_turns_zero(self):
         backend = OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
@@ -1263,6 +1317,93 @@ class TestRecallCategoryFallback(unittest.TestCase):
             results = asyncio.run(backend.recall("query"))
 
         self.assertEqual("learning", results[0]["category"])
+
+
+class TestSessionIdPrecedence(unittest.TestCase):
+    """Test session_id precedence: client_id param > ctx > app."""
+
+    def _make_backend(self, dedup_turns=5):
+        return OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=dedup_turns,
+        )
+
+    def _run_recall_get_session_id(self, backend, session_id=""):
+        search_response = {
+            "status": "ok",
+            "result": {"entries": []},
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance,
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(backend.recall(
+                "query", session_id=session_id,
+            ))
+
+        payload = client_instance.post.call_args[1]["json"]
+        return payload.get("session_id", "")
+
+    def test_explicit_client_id_used(self):
+        backend = self._make_backend()
+        sid = self._run_recall_get_session_id(
+            backend, session_id="explicit-42",
+        )
+        self.assertEqual("explicit-42", sid)
+
+    def test_empty_client_id_no_context_mode(self):
+        """No session_id → plain search (no context mode)."""
+        backend = self._make_backend()
+        search_response = {
+            "status": "ok",
+            "result": {"memories": []},
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance,
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(backend.recall("query"))
+
+        payload = client_instance.post.call_args[1]["json"]
+        self.assertNotIn("session_id", payload)
+        self.assertNotIn("mode", payload)
+
+    def test_fixed_id_persists_across_calls(self):
+        backend = self._make_backend()
+        sid1 = self._run_recall_get_session_id(
+            backend, session_id="stable-session",
+        )
+        sid2 = self._run_recall_get_session_id(
+            backend, session_id="stable-session",
+        )
+        self.assertEqual(sid1, sid2)
+        self.assertEqual("stable-session", sid1)
+
+    def test_switched_id_changes_session(self):
+        backend = self._make_backend()
+        sid1 = self._run_recall_get_session_id(
+            backend, session_id="session-alpha",
+        )
+        sid2 = self._run_recall_get_session_id(
+            backend, session_id="session-beta",
+        )
+        self.assertNotEqual(sid1, sid2)
 
 
 class TestMemoryPrefix(unittest.TestCase):

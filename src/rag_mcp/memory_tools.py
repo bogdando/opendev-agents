@@ -16,6 +16,7 @@ async def recall(
     category: str = "",
     top_k: int = 5,
     detail_level: str = "L1",
+    client_id: str = "",
 ) -> str:
     """Recall relevant memories from past sessions.
 
@@ -32,6 +33,9 @@ async def recall(
             "L1" (overview, default), or "L2" (full content). When OV
             has auto_generate_l0/l1 enabled, uses VLM summaries;
             otherwise extractive fallback. PNG wrap only at L2.
+        client_id: Override session identifier for recall-time
+            dedup. When empty, falls back to transport client_id
+            or the server-generated session_id.
     """
     app = get_app_context(ctx)
 
@@ -46,7 +50,11 @@ async def recall(
         detail_level, app.config.tiered_retrieval, app.config.default_detail_level
     )
 
-    session_id = getattr(ctx, "client_id", "") or ""
+    session_id = (
+        client_id
+        or getattr(ctx, "client_id", "")
+        or app.session_id
+    )
 
     memories = await app.memory.recall(
         query,

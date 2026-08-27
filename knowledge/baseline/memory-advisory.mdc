@@ -17,4 +17,13 @@ whenever:
 - You learned conventions, a path, a source or a URL
 - A workflow succeeds with confirmed outcome
 - A tool or issued command succeeds with expected results.
-Allowed memories categories: preference, decision, learning, correction, context, workflow
+Allowed memories categories: preference, decision, learning, correction, context, workflow.
+
+Remember() dedup: write-time by cosine similarity.
+Recall() dedup: suppresses already-returned memories within a session.
+Session identity precedence: <prefix>_recall(client_id=...) > MCP transport
+client_id > server-generated session_id. Restarting server resets the latter.
+
+Use different client_id per sub-session for coherent view (same top results recalled).
+Use fixed client_id across sub-sessions for alternative opinions
+(suppressing already-returned memories forcing diverse results).

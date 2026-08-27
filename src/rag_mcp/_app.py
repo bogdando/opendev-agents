@@ -9,9 +9,10 @@ sporadic tool-discovery failures in Cursor's MCP client.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 try:
@@ -43,6 +44,9 @@ class AppContext:
     memory: MemoryProtocol | None = None
     embeddings: EmbeddingClient | None = None
     bg_summarizer: BackgroundSummarizer | None = None
+    session_id: str = field(
+        default_factory=lambda: uuid.uuid4().hex[:12]
+    )
 
 
 def get_app_context(ctx: Context) -> AppContext:

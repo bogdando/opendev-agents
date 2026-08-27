@@ -87,5 +87,69 @@ class TestMockBackendReranking(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r["score"], 1.0)
 
 
+class TestGuaranteedBM25Slot(unittest.IsolatedAsyncioTestCase):
+    """After semantic ranking, at least 1 keyword-matching result must appear."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        store_dir = Path(self._tmpdir) / "store1"
+        store_dir.mkdir()
+        (store_dir / "semantic_match.md").write_text(
+            "# Semantically Similar\nThis doc has no query keywords at all."
+        )
+        (store_dir / "keyword_match.md").write_text(
+            "# Keyword Match\nREFERENCE RESULTS for RAG MCP summarizer tests."
+        )
+        (store_dir / "another_semantic.md").write_text(
+            "# Another Semantic\nAlso unrelated to the query keywords."
+        )
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    async def test_keyword_match_included_when_semantics_dominate(self):
+        """Even when embeddings rank keyword_match.md last, it must appear."""
+        backend = MockBackend(self._tmpdir)
+
+        mock_embeddings = mock.AsyncMock()
+        mock_embeddings.embed_query = mock.AsyncMock(return_value=[1.0, 0.0, 0.0])
+        # Embeddings push keyword_match.md to last place
+        mock_embeddings.embed = mock.AsyncMock(return_value=[
+            [0.95, 0.05, 0.0],  # semantic_match.md - highest cosine
+            [0.1, 0.1, 0.9],   # keyword_match.md - lowest cosine
+            [0.8, 0.15, 0.05], # another_semantic.md - second highest
+        ])
+
+        results = await backend.search(
+            "REFERENCE RESULTS RAG MCP summarizer", "store1", 2,
+            embeddings=mock_embeddings,
+        )
+
+        sources = [r["source"] for r in results]
+        self.assertIn("store1/keyword_match.md", sources)
+
+    async def test_no_swap_when_keyword_match_already_in_top(self):
+        """If top results already have keyword coverage, no swap needed."""
+        backend = MockBackend(self._tmpdir)
+
+        mock_embeddings = mock.AsyncMock()
+        mock_embeddings.embed_query = mock.AsyncMock(return_value=[0.1, 0.1, 0.9])
+        # keyword_match.md is already top by cosine
+        mock_embeddings.embed = mock.AsyncMock(return_value=[
+            [0.2, 0.1, 0.0],  # semantic_match.md
+            [0.1, 0.1, 0.95], # keyword_match.md - highest
+            [0.3, 0.1, 0.0],  # another_semantic.md
+        ])
+
+        results = await backend.search(
+            "REFERENCE RESULTS RAG MCP summarizer", "store1", 2,
+            embeddings=mock_embeddings,
+        )
+
+        self.assertEqual(2, len(results))
+        self.assertIn("store1/keyword_match.md", results[0]["source"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -41,7 +41,12 @@ class LocalMemoryBackend:
     async def recall(
         self, query: str, category: str = "", top_k: int = 5, **kwargs
     ) -> list[dict]:
-        """Find memories matching query, with optional embedding reranking."""
+        """Find memories matching query, with optional embedding reranking.
+
+        Guarantees at least 1 BM25-style keyword match in results: after
+        embedding reranking, if no result has >=50% keyword coverage the
+        best keyword match is merged into the final set.
+        """
         embeddings: EmbeddingClient | None = kwargs.get("embeddings")
 
         if not self._root.exists():
@@ -60,9 +65,44 @@ class LocalMemoryBackend:
                     candidates, query, embeddings
                 )
                 if reranked is not None:
-                    return reranked[:top_k]
+                    results = reranked[:top_k]
+                    results = self._ensure_keyword_hit(
+                        query, results, memories, top_k
+                    )
+                    return results
 
         return self._keyword_recall(query, memories, top_k)
+
+    def _ensure_keyword_hit(
+        self,
+        query: str,
+        results: list[dict],
+        memories: list[dict],
+        top_k: int,
+    ) -> list[dict]:
+        """Guarantee at least 1 BM25-style keyword match in results."""
+        keywords = [
+            t
+            for t in query.lower().split()
+            if t not in SEARCH_STOP_WORDS and len(t) > 2
+        ]
+        if not keywords:
+            return results
+
+        has_kw = any(
+            sum(1 for kw in keywords if kw in r["content"].lower())
+            >= len(keywords) * 0.5
+            for r in results
+        )
+        if has_kw:
+            return results
+
+        best_kw = self._keyword_recall(query, memories, 1)
+        if best_kw:
+            seen_uris = {r["uri"] for r in results}
+            if best_kw[0]["uri"] not in seen_uris:
+                results = results[: top_k - 1] + best_kw
+        return results
 
     def _keyword_recall(
         self, query: str, memories: list[dict], top_k: int

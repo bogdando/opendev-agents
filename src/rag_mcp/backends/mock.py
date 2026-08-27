@@ -164,8 +164,31 @@ class MockBackend:
 
         scored.sort(key=lambda t: t[0], reverse=True)
 
+        top_items = list(scored[:top_k])
+
+        # Guaranteed BM25 slot: if no item in top_k has >=50% keyword
+        # coverage, insert the best pure-keyword match.
+        if keywords:
+            has_kw = any(
+                sum(1 for kw in keywords if kw in t[2].lower())
+                >= len(keywords) * 0.5
+                for t in top_items
+            )
+            if not has_kw:
+                best_kw = max(
+                    scored,
+                    key=lambda t: sum(
+                        1 for kw in keywords if kw in t[2].lower()
+                    ),
+                )
+                kw_hits = sum(
+                    1 for kw in keywords if kw in best_kw[2].lower()
+                )
+                if kw_hits > 0 and best_kw not in top_items:
+                    top_items = top_items[: top_k - 1] + [best_kw]
+
         results: list[dict] = []
-        for score, path, text in scored[:top_k]:
+        for score, path, text in top_items:
             title = _extract_title(text, path)
             rel = os.path.relpath(path, self._root)
             results.append(

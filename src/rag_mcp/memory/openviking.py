@@ -8,6 +8,11 @@ After writing a memory via ``content/write``, a parallel write to the
 ``resources/memories/`` namespace is triggered so that OV's VLM pipeline
 generates L0/L1 abstracts (``content/write`` never triggers VLM for
 the ``memories/`` namespace).
+
+Hybrid recall: OV's search is purely semantic (embedding-based). To
+guarantee at least one BM25-style keyword match, a secondary keyword
+scan runs over OV listing results when semantic search fails to surface
+content matching the query keywords.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.formatting import _L0_MAX_TOKENS, _L1_MAX_CHARS
 from rag_mcp.memory import VALID_CATEGORIES
 
@@ -40,6 +46,26 @@ def _category_from_uri(uri: str) -> str:
         if segment in VALID_CATEGORIES:
             return segment
     return "context"
+
+
+def _query_keywords(query: str) -> list[str]:
+    """Extract meaningful keywords from a query string."""
+    return [
+        t for t in query.lower().split()
+        if t not in SEARCH_STOP_WORDS and len(t) > 2
+    ] or query.lower().split()
+
+
+def _keyword_overlap(text: str, keywords: list[str]) -> float:
+    """Fraction of keywords found in text (0.0–1.0)."""
+    if not keywords:
+        return 0.0
+    text_lower = text.lower()
+    hits = sum(1 for kw in keywords if kw in text_lower)
+    return hits / len(keywords)
+
+
+_MIN_KEYWORD_COVERAGE = 0.5
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -169,9 +195,18 @@ class OpenVikingMemoryBackend:
         if category and category in VALID_CATEGORIES:
             target_uri = f"{target_uri}/{category}"
 
+        # Widen the candidate pool for keyword post-filtering at lower tiers.
+        # L2 fetches full content — no need to over-fetch.
+        if detail_level == "L2":
+            search_limit = top_k
+        elif detail_level == "L1":
+            search_limit = top_k * 2
+        else:
+            search_limit = top_k * 3
+
         payload: dict = {
             "query": query,
-            "limit": top_k,
+            "limit": search_limit,
         }
         if use_context:
             payload["mode"] = "context"
@@ -245,7 +280,102 @@ class OpenVikingMemoryBackend:
             )
             if has_text:
                 results.append(mem)
-        return results
+
+        keywords = _query_keywords(query)
+
+        def _scorable_text(r: dict) -> str:
+            """At L2 content is full text; at L0/L1 combine all tier fields."""
+            if detail_level == "L2":
+                return r.get("content") or ""
+            return " ".join(filter(None, [
+                r.get("content"), r.get("l1_summary"), r.get("l0_summary"),
+            ]))
+
+        # Hybrid rerank: boost results that contain query keywords.
+        for r in results:
+            kw_score = _keyword_overlap(_scorable_text(r), keywords)
+            sem_score = r.get("score") or 0.0
+            r["_hybrid"] = 0.7 * sem_score + 0.3 * kw_score
+
+        results.sort(key=lambda r: r.get("_hybrid", 0), reverse=True)
+        for r in results:
+            r.pop("_hybrid", None)
+
+        # Guaranteed BM25 slot: if no result in top_k has keyword
+        # coverage, run a keyword fallback scan.
+        top_slice = results[:top_k]
+        has_kw_match = any(
+            _keyword_overlap(_scorable_text(r), keywords)
+            >= _MIN_KEYWORD_COVERAGE
+            for r in top_slice
+        )
+        if not has_kw_match:
+            kw_hit = await self._keyword_fallback(
+                query, keywords, category, detail_level,
+                exclude_uris={r["uri"] for r in results},
+            )
+            if kw_hit:
+                top_slice.append(kw_hit)
+
+        return top_slice[:top_k]
+
+    async def _keyword_fallback(
+        self,
+        query: str,
+        keywords: list[str],
+        category: str,
+        detail_level: str,
+        exclude_uris: set[str] | None = None,
+    ) -> dict | None:
+        """BM25-style keyword scan over listed memories.
+
+        Scans recent memories (category-scoped first, then all) and
+        returns the best keyword match not already in semantic results.
+        Gracefully returns None on any I/O error.
+        """
+        exclude_uris = exclude_uris or set()
+
+        try:
+            listing = await self.list_memories(category=category, limit=50)
+            if not listing and category:
+                listing = await self.list_memories(category="", limit=50)
+        except (httpx.HTTPError, AttributeError, TypeError):
+            return None
+
+        if not listing:
+            return None
+
+        best: dict | None = None
+        best_score = 0.0
+
+        for item in listing:
+            uri = item.get("uri", "")
+            if not uri or uri in exclude_uris:
+                continue
+            try:
+                content = await self._read_content(uri)
+            except (httpx.HTTPError, AttributeError, TypeError):
+                logger.debug("Keyword fallback: failed to read %s", uri)
+                continue
+            if not content:
+                continue
+            score = _keyword_overlap(content, keywords)
+            if score > best_score:
+                best_score = score
+                cat = _category_from_uri(uri)
+                best = {
+                    "content": content,
+                    "category": cat,
+                    "saved_at": item.get("saved_at", ""),
+                    "uri": uri,
+                    "score": round(best_score, 4),
+                }
+            if best_score >= 1.0:
+                break
+
+        if best and best_score >= _MIN_KEYWORD_COVERAGE:
+            return best
+        return None
 
     async def _fetch_vlm_abstracts(
         self, query: str, category: str, top_k: int,

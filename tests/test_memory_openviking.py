@@ -12,6 +12,8 @@ from rag_mcp.memory.openviking import (
     OpenVikingMemoryBackend,
     _build_memory_dict,
     _category_from_uri,
+    _keyword_overlap,
+    _query_keywords,
 )
 
 
@@ -521,7 +523,6 @@ class TestRecall(unittest.TestCase):
             results = asyncio.run(self.backend.recall("something"))
 
         self.assertEqual("Inline content from search", results[0]["content"])
-        client_instance.get.assert_not_called()
 
     def test_recall_with_category_filter(self):
         search_response = {"status": "ok", "result": {"memories": []}}
@@ -853,7 +854,6 @@ class TestDetailTierRecall(unittest.TestCase):
         self.assertEqual(1, len(results))
         self.assertEqual("One-line abstract", results[0]["l0_summary"])
         self.assertEqual("", results[0]["content"])
-        client_instance.get.assert_not_called()
 
     def test_l2_recall_abstract_entry_fetches_full(self):
         """L2 recall with abstract entry should fetch full content."""
@@ -922,7 +922,6 @@ class TestDetailTierRecall(unittest.TestCase):
 
         self.assertEqual("A longer overview paragraph about the topic.", results[0]["content"])
         self.assertEqual("A longer overview paragraph about the topic.", results[0]["l1_summary"])
-        client_instance.get.assert_not_called()
 
     def test_overview_frontmatter_only_fetches_full(self):
         """Overview entry with only YAML frontmatter falls back to _read_content."""
@@ -960,7 +959,8 @@ class TestDetailTierRecall(unittest.TestCase):
 
         self.assertEqual(1, len(results))
         self.assertEqual("Actual content of the memory.", results[0]["content"])
-        client_instance.get.assert_called_once()
+        # GET called for _read_content; keyword fallback may also call list_memories
+        self.assertGreaterEqual(client_instance.get.call_count, 1)
 
     def test_plain_search_no_detail_field(self):
         """Non-context recall (no detail field) behaves like full."""
@@ -1404,6 +1404,235 @@ class TestSessionIdPrecedence(unittest.TestCase):
             backend, session_id="session-beta",
         )
         self.assertNotEqual(sid1, sid2)
+
+
+class TestKeywordHelpers(unittest.TestCase):
+    """Unit tests for _query_keywords and _keyword_overlap."""
+
+    def test_query_keywords_filters_stop_words(self):
+        kws = _query_keywords("REFERENCE RESULTS for RAG MCP summarizer tests")
+        self.assertNotIn("for", kws)
+        self.assertIn("reference", kws)
+        self.assertIn("results", kws)
+        self.assertIn("rag", kws)
+        self.assertIn("mcp", kws)
+        self.assertIn("summarizer", kws)
+        self.assertIn("tests", kws)
+
+    def test_query_keywords_filters_short_words(self):
+        kws = _query_keywords("I do it so no up my")
+        # All are stop words or <=2 chars; fallback returns all
+        self.assertGreater(len(kws), 0)
+
+    def test_keyword_overlap_full_match(self):
+        text = "REFERENCE RESULTS for RAG MCP summarizer tests"
+        kws = _query_keywords("REFERENCE RESULTS RAG MCP summarizer tests")
+        self.assertAlmostEqual(_keyword_overlap(text, kws), 1.0)
+
+    def test_keyword_overlap_partial_match(self):
+        text = "REFERENCE content about something else"
+        kws = _query_keywords("REFERENCE RESULTS RAG MCP summarizer")
+        self.assertGreater(_keyword_overlap(text, kws), 0.0)
+        self.assertLess(_keyword_overlap(text, kws), 0.5)
+
+    def test_keyword_overlap_no_match(self):
+        text = "completely unrelated content about pods"
+        kws = _query_keywords("REFERENCE RESULTS RAG MCP summarizer")
+        self.assertEqual(_keyword_overlap(text, kws), 0.0)
+
+    def test_keyword_overlap_empty_keywords(self):
+        self.assertEqual(_keyword_overlap("any text", []), 0.0)
+
+
+class TestHybridRecallKeywordFallback(unittest.TestCase):
+    """Guaranteed BM25 slot: keyword fallback fires when semantic misses."""
+
+    def setUp(self):
+        self.backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=0,
+        )
+
+    def test_keyword_fallback_fires_when_semantic_has_no_keyword_coverage(self):
+        """Semantic returns results without query keywords → fallback finds match."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/context/unrelated.md",
+                    "score": 0.9,
+                    "content": "Completely unrelated content about kubernetes pods",
+                    "category": "context",
+                }],
+            },
+        }
+        ls_response = {
+            "entries": [
+                {
+                    "name": "target.md",
+                    "uri": "viking://user/testuser/memories/context/target.md",
+                    "updated_at": "2026-08-27",
+                },
+            ],
+        }
+        read_response = {
+            "status": "ok",
+            "result": "REFERENCE RESULTS for RAG MCP summarizer tests with granite model",
+        }
+
+        mock_search = _mock_response(search_response)
+        mock_ls = _mock_response(ls_response)
+        mock_read = _mock_response(read_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.get.side_effect = [mock_ls, mock_read]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall("REFERENCE RESULTS RAG MCP summarizer")
+            )
+
+        contents = [r["content"] for r in results]
+        self.assertTrue(any("REFERENCE RESULTS" in c for c in contents))
+
+    def test_no_fallback_when_semantic_has_keyword_coverage(self):
+        """Semantic results contain query keywords → no fallback needed."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/context/match.md",
+                    "score": 0.85,
+                    "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                    "category": "context",
+                }],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall("REFERENCE RESULTS RAG MCP summarizer")
+            )
+
+        self.assertEqual(1, len(results))
+        # No GET calls for list_memories or _read_content
+        client_instance.get.assert_not_called()
+
+    def test_keyword_fallback_deduplicates_by_uri(self):
+        """Fallback skips URIs already present in semantic results."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/context/target.md",
+                    "score": 0.5,
+                    "content": "Short unrelated snippet",
+                    "category": "context",
+                }],
+            },
+        }
+        ls_response = {
+            "entries": [
+                {
+                    "name": "target.md",
+                    "uri": "viking://user/testuser/memories/context/target.md",
+                    "updated_at": "2026-08-27",
+                },
+            ],
+        }
+
+        mock_search = _mock_response(search_response)
+        mock_ls = _mock_response(ls_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.get.return_value = mock_ls
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall("REFERENCE RESULTS RAG summarizer")
+            )
+
+        # Only the original result — fallback found no new URI
+        self.assertEqual(1, len(results))
+
+    def test_search_limit_scales_with_detail_level(self):
+        """search_limit adapts: L0=×3, L1=×2, L2=×1."""
+        search_response = {"status": "ok", "result": {"memories": []}}
+        mock_resp = _mock_response(search_response)
+
+        for detail, expected_factor in [("L0", 3), ("L1", 2), ("L2", 1)]:
+            with patch("httpx.AsyncClient") as mock_client_cls:
+                client_instance = AsyncMock()
+                client_instance.post.return_value = mock_resp
+                client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+                client_instance.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = client_instance
+
+                asyncio.run(
+                    self.backend.recall("query", top_k=5, detail_level=detail)
+                )
+
+            payload = client_instance.post.call_args[1]["json"]
+            self.assertEqual(
+                5 * expected_factor, payload["limit"],
+                f"detail_level={detail} should use limit={5 * expected_factor}",
+            )
+
+    def test_hybrid_rerank_boosts_keyword_matches(self):
+        """Hybrid reranking promotes results with keyword overlap."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [
+                    {
+                        "uri": "viking://user/testuser/memories/context/no_kw.md",
+                        "score": 0.95,
+                        "content": "Unrelated high-similarity content about pods",
+                        "category": "context",
+                    },
+                    {
+                        "uri": "viking://user/testuser/memories/context/has_kw.md",
+                        "score": 0.60,
+                        "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                        "category": "context",
+                    },
+                ],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS RAG MCP summarizer", top_k=2
+                )
+            )
+
+        # Keyword-bearing result should be promoted to first by hybrid score
+        self.assertIn("REFERENCE RESULTS", results[0]["content"])
 
 
 class TestMemoryPrefix(unittest.TestCase):

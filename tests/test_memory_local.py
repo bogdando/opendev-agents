@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from rag_mcp.memory.local import LocalMemoryBackend
@@ -137,6 +138,94 @@ class TestRecall(unittest.TestCase):
         self.assertIn("category", r)
         self.assertIn("saved_at", r)
         self.assertIn("uri", r)
+
+
+class TestEnsureKeywordHit(unittest.TestCase):
+    """Guarantees at least 1 BM25-style keyword match after embedding reranking."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmpdir.name)
+        self.backend = LocalMemoryBackend(str(self.root))
+        asyncio.run(self._seed())
+
+    async def _seed(self):
+        await self.backend.remember(
+            "REFERENCE RESULTS for RAG MCP summarizer tests with granite model",
+            "context",
+        )
+        await self.backend.remember(
+            "Unrelated content about kubernetes networking",
+            "learning",
+        )
+        await self.backend.remember(
+            "Another unrelated memory about ansible playbooks",
+            "workflow",
+        )
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_keyword_hit_survives_embedding_reranking(self):
+        """When embeddings push the keyword match out, it gets merged back."""
+        mock_embeddings = unittest.mock.AsyncMock()
+        # Query embedding
+        mock_embeddings.embed_query = unittest.mock.AsyncMock(
+            return_value=[1.0, 0.0, 0.0]
+        )
+        # Doc embeddings: make the keyword match (first seeded) least similar
+        mock_embeddings.embed = unittest.mock.AsyncMock(
+            return_value=[
+                [0.1, 0.9, 0.0],  # REFERENCE RESULTS - low cosine
+                [0.95, 0.0, 0.05],  # kubernetes - high cosine
+                [0.85, 0.1, 0.05],  # ansible - medium cosine
+            ]
+        )
+
+        results = asyncio.run(
+            self.backend.recall(
+                "REFERENCE RESULTS RAG MCP summarizer",
+                top_k=2,
+                embeddings=mock_embeddings,
+            )
+        )
+
+        contents = " ".join(r["content"] for r in results)
+        self.assertIn("REFERENCE RESULTS", contents)
+
+    def test_no_merge_when_keyword_already_in_results(self):
+        """When top results already contain keyword match, no extra merge."""
+        mock_embeddings = unittest.mock.AsyncMock()
+        mock_embeddings.embed_query = unittest.mock.AsyncMock(
+            return_value=[0.1, 0.9, 0.0]
+        )
+        # keyword match (first seeded) has highest cosine
+        mock_embeddings.embed = unittest.mock.AsyncMock(
+            return_value=[
+                [0.1, 0.95, 0.0],  # REFERENCE RESULTS - top
+                [0.8, 0.1, 0.1],   # kubernetes
+                [0.7, 0.2, 0.1],   # ansible
+            ]
+        )
+
+        results = asyncio.run(
+            self.backend.recall(
+                "REFERENCE RESULTS RAG MCP summarizer",
+                top_k=2,
+                embeddings=mock_embeddings,
+            )
+        )
+
+        self.assertLessEqual(len(results), 2)
+        self.assertIn("REFERENCE RESULTS", results[0]["content"])
+
+    def test_keyword_fallback_without_embeddings(self):
+        """Without embeddings, pure keyword recall still works."""
+        results = asyncio.run(
+            self.backend.recall("REFERENCE RESULTS RAG MCP summarizer")
+        )
+        self.assertGreater(len(results), 0)
+        self.assertIn("REFERENCE RESULTS", results[0]["content"])
 
 
 class TestListMemories(unittest.TestCase):

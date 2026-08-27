@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from rag_mcp.constants import SEARCH_STOP_WORDS
+from rag_mcp.constants import EXACT_MATCH_COVERAGE, SEARCH_STOP_WORDS
 from rag_mcp.memory import VALID_CATEGORIES
 
 if TYPE_CHECKING:
@@ -91,7 +91,7 @@ class LocalMemoryBackend:
 
         has_kw = any(
             sum(1 for kw in keywords if kw in r["content"].lower())
-            >= len(keywords) * 0.5
+            >= len(keywords) * EXACT_MATCH_COVERAGE
             for r in results
         )
         if has_kw:

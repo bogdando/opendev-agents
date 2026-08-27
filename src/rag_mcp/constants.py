@@ -10,3 +10,10 @@ SEARCH_STOP_WORDS = frozenset({
     "and", "but", "for", "not", "are", "was", "has",
     "can", "did", "its", "our", "had", "may", "all",
 })
+
+# Minimum keyword overlap for a fallback result to be accepted.
+MIN_KEYWORD_COVERAGE = 0.5
+
+# Threshold for suppressing the keyword fallback: only results with
+# near-exact keyword coverage prevent the expensive BM25 scan.
+EXACT_MATCH_COVERAGE = 0.8

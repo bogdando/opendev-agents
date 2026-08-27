@@ -24,7 +24,11 @@ from datetime import UTC, datetime
 
 import httpx
 
-from rag_mcp.constants import SEARCH_STOP_WORDS
+from rag_mcp.constants import (
+    EXACT_MATCH_COVERAGE,
+    MIN_KEYWORD_COVERAGE,
+    SEARCH_STOP_WORDS,
+)
 from rag_mcp.formatting import _L0_MAX_TOKENS, _L1_MAX_CHARS
 from rag_mcp.memory import VALID_CATEGORIES
 
@@ -63,9 +67,6 @@ def _keyword_overlap(text: str, keywords: list[str]) -> float:
     text_lower = text.lower()
     hits = sum(1 for kw in keywords if kw in text_lower)
     return hits / len(keywords)
-
-
-_MIN_KEYWORD_COVERAGE = 0.5
 
 
 def _strip_frontmatter(text: str) -> str:
@@ -301,12 +302,13 @@ class OpenVikingMemoryBackend:
         for r in results:
             r.pop("_hybrid", None)
 
-        # Guaranteed BM25 slot: if no result in top_k has keyword
-        # coverage, run a keyword fallback scan.
+        # Guaranteed BM25 slot: only suppress fallback if a result has
+        # near-exact keyword coverage (>=80%).  Partial matches get the
+        # hybrid boost above but don't prevent finding the true exact match.
         top_slice = results[:top_k]
         has_kw_match = any(
             _keyword_overlap(_scorable_text(r), keywords)
-            >= _MIN_KEYWORD_COVERAGE
+            >= EXACT_MATCH_COVERAGE
             for r in top_slice
         )
         if not has_kw_match:
@@ -373,7 +375,7 @@ class OpenVikingMemoryBackend:
             if best_score >= 1.0:
                 break
 
-        if best and best_score >= _MIN_KEYWORD_COVERAGE:
+        if best and best_score >= MIN_KEYWORD_COVERAGE:
             return best
         return None
 

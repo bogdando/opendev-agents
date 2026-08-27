@@ -1595,6 +1595,63 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
                 f"detail_level={detail} should use limit={5 * expected_factor}",
             )
 
+    def test_partial_keyword_coverage_does_not_suppress_fallback(self):
+        """Results with 60% keyword coverage should NOT suppress the fallback.
+
+        This reproduces the real-world case where "Re-run RAG MCP summarizer
+        regression" has partial keyword overlap (rag, mcp, summarizer = 3/5)
+        but is not the exact match.  The 80% threshold should let the fallback
+        fire and find the actual gold memory.
+        """
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": "viking://user/testuser/memories/context/partial.md",
+                    "score": 0.88,
+                    "content": "Re-run RAG MCP summarizer regression (mock + OKP)",
+                    "category": "context",
+                }],
+            },
+        }
+        ls_response = {
+            "entries": [
+                {
+                    "name": "gold.md",
+                    "uri": "viking://user/testuser/memories/workflow/gold.md",
+                    "updated_at": "2026-08-27",
+                },
+            ],
+        }
+        read_response = {
+            "status": "ok",
+            "result": "REFERENCE RESULTS for RAG MCP summarizer tests with granite",
+        }
+
+        mock_search = _mock_response(search_response)
+        mock_ls = _mock_response(ls_response)
+        mock_read = _mock_response(read_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.get.side_effect = [mock_ls, mock_read]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS RAG MCP summarizer tests", top_k=5
+                )
+            )
+
+        contents = [r["content"] for r in results]
+        self.assertTrue(
+            any("REFERENCE RESULTS for RAG MCP summarizer tests" in c for c in contents),
+            "Fallback should find the exact keyword match",
+        )
+
     def test_hybrid_rerank_boosts_keyword_matches(self):
         """Hybrid reranking promotes results with keyword overlap."""
         search_response = {

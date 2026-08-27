@@ -129,6 +129,31 @@ class TestGuaranteedBM25Slot(unittest.IsolatedAsyncioTestCase):
         sources = [r["source"] for r in results]
         self.assertIn("store1/keyword_match.md", sources)
 
+    async def test_partial_coverage_still_triggers_swap(self):
+        """60% keyword coverage should NOT suppress the swap (threshold is 80%)."""
+        store_dir = Path(self._tmpdir) / "store1"
+        (store_dir / "partial_match.md").write_text(
+            "# Partial\nRe-run RAG MCP summarizer regression (mock + OKP)."
+        )
+        backend = MockBackend(self._tmpdir)
+
+        mock_embeddings = mock.AsyncMock()
+        mock_embeddings.embed_query = mock.AsyncMock(return_value=[1.0, 0.0, 0.0])
+        mock_embeddings.embed = mock.AsyncMock(return_value=[
+            [0.95, 0.05, 0.0],  # semantic_match.md
+            [0.1, 0.1, 0.9],   # keyword_match.md (100% kw)
+            [0.8, 0.15, 0.05], # another_semantic.md
+            [0.7, 0.2, 0.1],   # partial_match.md (60% kw)
+        ])
+
+        results = await backend.search(
+            "REFERENCE RESULTS RAG MCP summarizer tests", "store1", 2,
+            embeddings=mock_embeddings,
+        )
+
+        sources = [r["source"] for r in results]
+        self.assertIn("store1/keyword_match.md", sources)
+
     async def test_no_swap_when_keyword_match_already_in_top(self):
         """If top results already have keyword coverage, no swap needed."""
         backend = MockBackend(self._tmpdir)

@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from rag_mcp.constants import SEARCH_STOP_WORDS
+from rag_mcp.constants import EXACT_MATCH_COVERAGE, SEARCH_STOP_WORDS
 
 if TYPE_CHECKING:
     from rag_mcp.embeddings import EmbeddingClient
@@ -166,12 +166,13 @@ class MockBackend:
 
         top_items = list(scored[:top_k])
 
-        # Guaranteed BM25 slot: if no item in top_k has >=50% keyword
-        # coverage, insert the best pure-keyword match.
+        # Guaranteed BM25 slot: only suppress when a result has near-exact
+        # keyword coverage.  Partial matches still get the blended score
+        # boost but don't prevent the fallback from finding the true hit.
         if keywords:
             has_kw = any(
                 sum(1 for kw in keywords if kw in t[2].lower())
-                >= len(keywords) * 0.5
+                >= len(keywords) * EXACT_MATCH_COVERAGE
                 for t in top_items
             )
             if not has_kw:

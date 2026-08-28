@@ -14,6 +14,8 @@ from rag_mcp.memory.openviking import (
     _category_from_uri,
     _filter_by_date,
     _keyword_overlap,
+    _lead_match,
+    _merge_keyword_hit,
     _parse_iso_dt,
     _query_keywords,
     _saved_at_from_uri,
@@ -1254,6 +1256,95 @@ class TestListMemories(unittest.TestCase):
 
         self.assertEqual(3, len(results))
 
+    def test_list_limit_zero_returns_all(self):
+        ls_response = {
+            "status": "ok",
+            "entries": [
+                {"name": f"f{i}.md", "uri": f"viking://u/{i}"} for i in range(10)
+            ],
+        }
+        mock_resp = _mock_response(ls_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.get.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(self.backend.list_memories(limit=0))
+
+        self.assertEqual(10, len(results))
+
+    def test_list_saved_at_from_uri_not_updated_at(self):
+        ls_response = {
+            "status": "ok",
+            "entries": [{
+                "name": "20260826T112211Z.md",
+                "uri": (
+                    "viking://user/testuser/memories/context/"
+                    "20260826T112211Z.md"
+                ),
+                "updated_at": "2026-08-28T08:00:00+00:00",
+            }],
+        }
+        mock_resp = _mock_response(ls_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.get.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(self.backend.list_memories())
+
+        self.assertEqual("2026-08-26T11:22:11+00:00", results[0]["saved_at"])
+
+    def test_list_date_filter_before_limit_keeps_in_window_gold(self):
+        """Newer files must not push in-window gold past the list cap."""
+        from datetime import UTC, datetime
+
+        gold_uri = (
+            "viking://user/testuser/memories/context/20260826T112211Z.md"
+        )
+        entries = [
+            {
+                "name": f"20260828T0{i:02d}0000Z.md",
+                "uri": (
+                    "viking://user/testuser/memories/context/"
+                    f"20260828T0{i:02d}0000Z.md"
+                ),
+                "updated_at": "2026-08-28T08:00:00+00:00",
+            }
+            for i in range(5)
+        ]
+        entries.append({
+            "name": "20260826T112211Z.md",
+            "uri": gold_uri,
+            "updated_at": "2026-08-28T08:00:00+00:00",
+        })
+        ls_response = {"status": "ok", "entries": entries}
+        mock_resp = _mock_response(ls_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.get.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.list_memories(
+                    limit=1,
+                    dt_after=datetime(2026, 8, 26, 11, 22, 0, tzinfo=UTC),
+                    dt_before=datetime(2026, 8, 26, 11, 22, 57, tzinfo=UTC),
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(gold_uri, results[0]["uri"])
+
     def test_list_http_error_returns_empty(self):
         mock_resp = _mock_response({}, status_code=500)
 
@@ -1655,6 +1746,184 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
             "Fallback should find the exact keyword match",
         )
 
+    def test_citing_hit_does_not_suppress_gold_fallback(self):
+        """A workflow that quotes the gold title later must not block BM25.
+
+        Reproduces L2 recall of REFERENCE RESULTS where 11:22:57 workflow
+        has 6/6 keyword coverage in the body but the gold is
+        context/20260826T112211Z.md (title in the lead window).
+        """
+        citing = (
+            "Re-run RAG MCP summarizer regression (mock + OKP). "
+            + ("padding " * 30)
+            + "Compare L0/L1 to gold in memory category=context "
+            "'REFERENCE RESULTS for RAG MCP summarizer tests'."
+        )
+        gold = (
+            "REFERENCE RESULTS for RAG MCP summarizer tests "
+            "(Granite ibm-granite/granite-4.1-8b-fp8). "
+            "RAG_MCP_TIERED_RETRIEVAL=true."
+        )
+        gold_uri = (
+            "viking://user/testuser/memories/context/20260826T112211Z.md"
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": (
+                        "viking://user/testuser/memories/workflow/"
+                        "20260826T112257Z.md"
+                    ),
+                    "score": 0.92,
+                    "content": citing,
+                    "category": "workflow",
+                }],
+            },
+        }
+        ls_response = {
+            "entries": [
+                {
+                    "name": "20260826T112211Z.md",
+                    "uri": gold_uri,
+                    "updated_at": "2026-08-28T08:00:00+00:00",
+                },
+            ],
+        }
+        read_response = {"status": "ok", "result": gold}
+
+        mock_search = _mock_response(search_response)
+        mock_ls = _mock_response(ls_response)
+        mock_read = _mock_response(read_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.get.side_effect = [mock_ls, mock_read]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS for RAG MCP summarizer tests",
+                    top_k=1,
+                    detail_level="L2",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(gold_uri, results[0]["uri"])
+        self.assertIn("RAG_MCP_TIERED_RETRIEVAL", results[0]["content"])
+
+    def test_fallback_replaces_citing_hit_when_top_k_full(self):
+        """BM25 gold replaces a citing semantic hit at top_k=1 (no append-slice drop)."""
+        citing = (
+            "Re-run RAG MCP summarizer regression (mock + OKP). "
+            + ("padding " * 30)
+            + "'REFERENCE RESULTS for RAG MCP summarizer tests'."
+        )
+        gold_uri = (
+            "viking://user/testuser/memories/context/20260826T112211Z.md"
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [
+                    {
+                        "uri": "viking://user/testuser/memories/workflow/cite.md",
+                        "score": 0.99,
+                        "content": citing,
+                        "category": "workflow",
+                    },
+                    {
+                        "uri": "viking://user/testuser/memories/context/other.md",
+                        "score": 0.50,
+                        "content": "unrelated pods",
+                        "category": "context",
+                    },
+                ],
+            },
+        }
+        ls_response = {
+            "entries": [{
+                "name": "20260826T112211Z.md",
+                "uri": gold_uri,
+                "updated_at": "2026-08-28",
+            }],
+        }
+        read_response = {
+            "status": "ok",
+            "result": (
+                "REFERENCE RESULTS for RAG MCP summarizer tests. Gold body."
+            ),
+        }
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = _mock_response(search_response)
+            client_instance.get.side_effect = [
+                _mock_response(ls_response),
+                _mock_response(read_response),
+            ]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS RAG MCP summarizer tests",
+                    top_k=1,
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(gold_uri, results[0]["uri"])
+
+    def test_date_filter_uses_uri_timestamp_not_updated_at(self):
+        """stale listing updated_at must not hide gold in a tight window."""
+        gold_uri = (
+            "viking://user/testuser/memories/context/20260826T112211Z.md"
+        )
+        search_response = {"status": "ok", "result": {"memories": []}}
+        ls_response = {
+            "entries": [{
+                "name": "20260826T112211Z.md",
+                "uri": gold_uri,
+                "updated_at": "2026-08-28T08:00:00+00:00",
+            }],
+        }
+        read_response = {
+            "status": "ok",
+            "result": "REFERENCE RESULTS for RAG MCP summarizer tests",
+        }
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = _mock_response(search_response)
+            client_instance.get.side_effect = [
+                _mock_response(ls_response),
+                _mock_response(read_response),
+            ]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS RAG MCP summarizer tests",
+                    top_k=1,
+                    saved_after="2026-08-26T11:22:00+00:00",
+                    saved_before="2026-08-26T11:22:57+00:00",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(gold_uri, results[0]["uri"])
+        self.assertEqual(
+            "2026-08-26T11:22:11+00:00", results[0]["saved_at"],
+        )
+
     def test_hybrid_rerank_boosts_keyword_matches(self):
         """Hybrid reranking promotes results with keyword overlap."""
         search_response = {
@@ -1693,6 +1962,50 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
 
         # Keyword-bearing result should be promoted to first by hybrid score
         self.assertIn("REFERENCE RESULTS", results[0]["content"])
+
+
+class TestLeadMatch(unittest.TestCase):
+    """Lead-window match vs citation later in the body."""
+
+    def test_gold_leads_with_query_keywords(self):
+        text = (
+            "REFERENCE RESULTS for RAG MCP summarizer tests "
+            "(Granite ibm-granite)."
+        )
+        kws = _query_keywords("REFERENCE RESULTS for RAG MCP summarizer tests")
+        self.assertTrue(_lead_match(text, kws))
+
+    def test_citing_workflow_does_not_lead(self):
+        text = (
+            "Re-run RAG MCP summarizer regression (mock + OKP). "
+            + ("padding " * 30)
+            + "'REFERENCE RESULTS for RAG MCP summarizer tests'."
+        )
+        kws = _query_keywords("REFERENCE RESULTS for RAG MCP summarizer tests")
+        self.assertFalse(_lead_match(text, kws))
+        self.assertGreaterEqual(_keyword_overlap(text, kws), 0.8)
+
+    def test_merge_promotes_gold_over_citation(self):
+        kws = _query_keywords("REFERENCE RESULTS RAG MCP summarizer tests")
+        citing = {
+            "uri": "workflow.md",
+            "content": (
+                "Re-run RAG MCP summarizer regression. "
+                + ("padding " * 30)
+                + "REFERENCE RESULTS for RAG MCP summarizer tests."
+            ),
+        }
+        gold = {
+            "uri": "gold.md",
+            "content": "REFERENCE RESULTS for RAG MCP summarizer tests. Gold.",
+        }
+
+        def scorable(r):
+            return r.get("content") or ""
+
+        merged = _merge_keyword_hit([citing], gold, 1, kws, scorable)
+        self.assertEqual(1, len(merged))
+        self.assertEqual("gold.md", merged[0]["uri"])
 
 
 class TestSavedAtFromUri(unittest.TestCase):

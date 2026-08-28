@@ -11,8 +11,12 @@ the ``memories/`` namespace).
 
 Hybrid recall: OV's search is purely semantic (embedding-based). To
 guarantee at least one BM25-style keyword match, a secondary keyword
-scan runs over OV listing results when semantic search fails to surface
-content matching the query keywords.
+scan runs over OV listing results unless a semantic hit both covers
+the query keywords and leads with them (so a citing document that
+quotes the title later cannot suppress the gold). The BM25 hit is
+merged and re-sorted into ``top_k``.
+Date filters prefer the URI filename timestamp over listing
+``updated_at``.
 """
 
 from __future__ import annotations
@@ -27,6 +31,8 @@ import httpx
 
 from rag_mcp.constants import (
     EXACT_MATCH_COVERAGE,
+    KEYWORD_FALLBACK_LIST_LIMIT,
+    LEAD_MATCH_CHARS,
     MIN_KEYWORD_COVERAGE,
     SEARCH_STOP_WORDS,
 )
@@ -68,6 +74,42 @@ def _keyword_overlap(text: str, keywords: list[str]) -> float:
     text_lower = text.lower()
     hits = sum(1 for kw in keywords if kw in text_lower)
     return hits / len(keywords)
+
+
+def _lead_match(text: str, keywords: list[str], window: int = LEAD_MATCH_CHARS) -> bool:
+    """True when every query keyword appears in the opening *window* chars.
+
+    Distinguishes a gold document whose body *is* the query from a
+    citing document that quotes the same title later (workflow, notes).
+    """
+    if not keywords or not text:
+        return False
+    head = text.lstrip()[:window].lower()
+    return all(kw in head for kw in keywords)
+
+
+def _keyword_rank(text: str, keywords: list[str]) -> tuple[float, int]:
+    """Sort key: overlap first, then lead-window match."""
+    return (_keyword_overlap(text, keywords), 1 if _lead_match(text, keywords) else 0)
+
+
+def _merge_keyword_hit(
+    results: list[dict],
+    kw_hit: dict | None,
+    top_k: int,
+    keywords: list[str],
+    scorable,
+) -> list[dict]:
+    """Insert a BM25 hit and keep the best *top_k* by keyword rank.
+
+    Always re-sort so a lead-matching gold can replace a citing hit
+    that already filled ``top_k``. Duplicate URIs are skipped.
+    """
+    merged = list(results)
+    if kw_hit and kw_hit.get("uri") not in {r.get("uri") for r in merged}:
+        merged.append(kw_hit)
+    merged.sort(key=lambda r: _keyword_rank(scorable(r), keywords), reverse=True)
+    return merged[:top_k]
 
 
 _TS_RE = re.compile(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z")
@@ -151,9 +193,9 @@ def _build_memory_dict(
     by ``_read_content`` when L2 is requested).
     """
     saved_at = (
-        item.get("saved_at")
+        _saved_at_from_uri(uri)
+        or item.get("saved_at")
         or item.get("updated_at")
-        or _saved_at_from_uri(uri)
     )
     mem: dict = {
         "content": "",
@@ -365,26 +407,26 @@ class OpenVikingMemoryBackend:
         if dt_after or dt_before:
             results = _filter_by_date(results, dt_after, dt_before)
 
-        # Guaranteed BM25 slot: only suppress fallback if a result has
-        # near-exact keyword coverage (>=80%).  Partial matches get the
-        # hybrid boost above but don't prevent finding the true exact match.
+        # Guaranteed BM25 slot: suppress only when a result both covers
+        # the query (>=80%) *and* leads with those keywords.  A citing
+        # workflow that quotes the gold title later must not win.
         top_slice = results[:top_k]
-        has_kw_match = any(
-            _keyword_overlap(_scorable_text(r), keywords)
-            >= EXACT_MATCH_COVERAGE
+        has_primary = any(
+            _keyword_overlap(_scorable_text(r), keywords) >= EXACT_MATCH_COVERAGE
+            and _lead_match(_scorable_text(r), keywords)
             for r in top_slice
         )
-        if not has_kw_match:
+        kw_hit = None
+        if not has_primary:
             kw_hit = await self._keyword_fallback(
                 query, keywords, category, detail_level,
                 exclude_uris={r["uri"] for r in results},
                 dt_after=dt_after,
                 dt_before=dt_before,
             )
-            if kw_hit:
-                top_slice.append(kw_hit)
-
-        return top_slice[:top_k]
+        return _merge_keyword_hit(
+            top_slice, kw_hit, top_k, keywords, _scorable_text,
+        )
 
     async def _keyword_fallback(
         self,
@@ -398,17 +440,28 @@ class OpenVikingMemoryBackend:
     ) -> dict | None:
         """BM25-style keyword scan over listed memories.
 
-        Scans recent memories (category-scoped first, then all) and
+        Scans listed memories (category-scoped first, then all) and
         returns the best keyword match not already in semantic results.
-        Respects date-range filters when provided.
+        Date filters use the URI filename timestamp and run before the
+        list cap so an older gold in a tight window is kept.
         Gracefully returns None on any I/O error.
         """
         exclude_uris = exclude_uris or set()
 
         try:
-            listing = await self.list_memories(category=category, limit=50)
+            listing = await self.list_memories(
+                category=category,
+                limit=KEYWORD_FALLBACK_LIST_LIMIT,
+                dt_after=dt_after,
+                dt_before=dt_before,
+            )
             if not listing and category:
-                listing = await self.list_memories(category="", limit=50)
+                listing = await self.list_memories(
+                    category="",
+                    limit=KEYWORD_FALLBACK_LIST_LIMIT,
+                    dt_after=dt_after,
+                    dt_before=dt_before,
+                )
         except (httpx.HTTPError, AttributeError, TypeError):
             return None
 
@@ -416,45 +469,49 @@ class OpenVikingMemoryBackend:
             return None
 
         best: dict | None = None
-        best_score = 0.0
+        best_rank = (0.0, 0)
+        reads = 0
 
         for item in listing:
             uri = item.get("uri", "")
             if not uri or uri in exclude_uris:
                 continue
             item_ts = _parse_iso_dt(
-                item.get("saved_at") or _saved_at_from_uri(uri)
+                _saved_at_from_uri(uri) or item.get("saved_at")
             )
+            if (dt_after or dt_before) and item_ts is None:
+                continue
             if dt_after and item_ts and item_ts < dt_after:
                 continue
             if dt_before and item_ts and item_ts >= dt_before:
                 continue
+            if reads >= KEYWORD_FALLBACK_LIST_LIMIT:
+                break
             try:
                 content = await self._read_content(uri)
             except (httpx.HTTPError, AttributeError, TypeError):
                 logger.debug("Keyword fallback: failed to read %s", uri)
                 continue
+            reads += 1
             if not content:
                 continue
-            score = _keyword_overlap(content, keywords)
-            if score > best_score:
-                best_score = score
+            body = _strip_frontmatter(content)
+            rank = _keyword_rank(body, keywords)
+            if rank > best_rank:
+                best_rank = rank
                 cat = _category_from_uri(uri)
-                saved_at = (
-                    item.get("saved_at")
-                    or _saved_at_from_uri(uri)
-                )
+                saved_at = _saved_at_from_uri(uri) or item.get("saved_at")
                 best = {
-                    "content": content,
+                    "content": body,
                     "category": cat,
                     "saved_at": saved_at,
                     "uri": uri,
-                    "score": round(best_score, 4),
+                    "score": round(best_rank[0], 4),
                 }
-            if best_score >= 1.0:
+            if best_rank[0] >= 1.0 and best_rank[1] == 1:
                 break
 
-        if best and best_score >= MIN_KEYWORD_COVERAGE:
+        if best and best_rank[0] >= MIN_KEYWORD_COVERAGE:
             return best
         return None
 
@@ -686,9 +743,18 @@ class OpenVikingMemoryBackend:
         }
 
     async def list_memories(
-        self, category: str = "", limit: int = 20
+        self,
+        category: str = "",
+        limit: int = 20,
+        dt_after: datetime | None = None,
+        dt_before: datetime | None = None,
     ) -> list[dict]:
-        """List memories via OV's filesystem listing."""
+        """List memories via OV's filesystem listing.
+
+        Date filters (URI filename timestamp) run before *limit* so a
+        tight window still includes older gold.  *limit* 0 means no cap
+        (tests).  Keyword fallback uses KEYWORD_FALLBACK_LIST_LIMIT.
+        """
         list_path = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
             list_path = f"{list_path}/{category}"
@@ -709,13 +775,19 @@ class OpenVikingMemoryBackend:
             return []
 
         results: list[dict] = []
-        for item in data.get("entries", data.get("items", []))[:limit]:
+        for item in data.get("entries", data.get("items", [])):
+            uri = item.get("uri", item.get("path", ""))
             results.append(
                 {
                     "content": item.get("name", ""),
-                    "category": category or "context",
-                    "saved_at": item.get("updated_at", ""),
-                    "uri": item.get("uri", item.get("path", "")),
+                    "category": category or _category_from_uri(uri),
+                    "saved_at": _saved_at_from_uri(uri) or item.get("updated_at", ""),
+                    "uri": uri,
                 }
             )
+        results.sort(key=lambda r: r.get("saved_at") or "", reverse=True)
+        if dt_after or dt_before:
+            results = _filter_by_date(results, dt_after, dt_before)
+        if limit > 0:
+            results = results[:limit]
         return results

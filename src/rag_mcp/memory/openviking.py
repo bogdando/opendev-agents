@@ -9,14 +9,13 @@ After writing a memory via ``content/write``, a parallel write to the
 generates L0/L1 abstracts (``content/write`` never triggers VLM for
 the ``memories/`` namespace).
 
-Hybrid recall: OV's search is purely semantic (embedding-based). To
-guarantee at least one BM25-style keyword match, a secondary keyword
-scan runs over OV listing results unless a semantic hit both covers
-the query keywords and leads with them (so a citing document that
-quotes the title later cannot suppress the gold). The BM25 hit is
-merged and re-sorted into ``top_k``.
-Date filters prefer the URI filename timestamp over listing
-``updated_at``.
+Hybrid recall: OV's search is purely semantic (embedding-based). A
+dedicated BM25 holder is filled independently, then always merged
+into the semantic pool at BM25_MERGE_RATIO (30% of top_k). Lowest
+semantic entries are dropped to make room. BM25 scores are aligned
+so the best BM25 hit shares the max score of the kept semantic
+pool; ties prefer BM25. Duplicate URIs are skipped. Date filters
+prefer the URI filename timestamp over listing ``updated_at``.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ from datetime import UTC, datetime
 import httpx
 
 from rag_mcp.constants import (
-    EXACT_MATCH_COVERAGE,
+    BM25_MERGE_RATIO,
     KEYWORD_FALLBACK_LIST_LIMIT,
     LEAD_MATCH_CHARS,
     MIN_KEYWORD_COVERAGE,
@@ -93,22 +92,64 @@ def _keyword_rank(text: str, keywords: list[str]) -> tuple[float, int]:
     return (_keyword_overlap(text, keywords), 1 if _lead_match(text, keywords) else 0)
 
 
-def _merge_keyword_hit(
-    results: list[dict],
-    kw_hit: dict | None,
-    top_k: int,
-    keywords: list[str],
-    scorable,
-) -> list[dict]:
-    """Insert a BM25 hit and keep the best *top_k* by keyword rank.
+def _slot_counts(top_k: int) -> tuple[int, int]:
+    """Return (n_semantic, n_bm25) for a 70/30 merge of *top_k* slots."""
+    if top_k <= 0:
+        return 0, 0
+    n_bm25 = min(top_k, max(1, round(top_k * BM25_MERGE_RATIO)))
+    return top_k - n_bm25, n_bm25
 
-    Always re-sort so a lead-matching gold can replace a citing hit
-    that already filled ``top_k``. Duplicate URIs are skipped.
+
+def _align_bm25_scores(bm25: list[dict], sem_max: float) -> None:
+    """Scale BM25 scores so max(BM25) equals *sem_max* (in-place)."""
+    if not bm25 or sem_max <= 0:
+        return
+    bm_max = max((r.get("score") or 0.0) for r in bm25)
+    if bm_max <= 0:
+        return
+    scale = sem_max / bm_max
+    for r in bm25:
+        r["score"] = round((r.get("score") or 0.0) * scale, 4)
+
+
+def _merge_bm25_proportion(
+    semantic: list[dict],
+    bm25: list[dict],
+    top_k: int,
+) -> list[dict]:
+    """Keep 70% semantic slots, replace the rest with dedicated BM25 hits.
+
+    BM25 URIs already in the kept semantic pool are skipped. If the
+    holder has fewer hits than its quota, extra semantic entries are
+    kept so the result still fills *top_k*. After score alignment,
+    the list is sorted by score; BM25 wins ties so gold is not hidden
+    behind a citing semantic hit with the same max relevance.
     """
-    merged = list(results)
-    if kw_hit and kw_hit.get("uri") not in {r.get("uri") for r in merged}:
-        merged.append(kw_hit)
-    merged.sort(key=lambda r: _keyword_rank(scorable(r), keywords), reverse=True)
+    n_sem, n_bm25 = _slot_counts(top_k)
+    sem_kept_preview = semantic[:n_sem]
+    sem_uris = {r.get("uri") for r in sem_kept_preview}
+    bm25_unique = [r for r in bm25 if r.get("uri") not in sem_uris][:n_bm25]
+    n_bm25_actual = len(bm25_unique)
+    n_sem_actual = min(len(semantic), top_k - n_bm25_actual)
+    sem_kept = semantic[:n_sem_actual]
+    if not bm25_unique:
+        return semantic[:top_k]
+    sem_max = max((r.get("score") or 0.0) for r in sem_kept) if sem_kept else 0.0
+    _align_bm25_scores(bm25_unique, sem_max)
+    for r in sem_kept:
+        r["_pool"] = "semantic"
+    for r in bm25_unique:
+        r["_pool"] = "bm25"
+    merged = sem_kept + bm25_unique
+    merged.sort(
+        key=lambda r: (
+            r.get("score") or 0.0,
+            1 if r.get("_pool") == "bm25" else 0,
+        ),
+        reverse=True,
+    )
+    for r in merged:
+        r.pop("_pool", None)
     return merged[:top_k]
 
 
@@ -383,23 +424,8 @@ class OpenVikingMemoryBackend:
 
         keywords = _query_keywords(query)
 
-        def _scorable_text(r: dict) -> str:
-            """At L2 content is full text; at L0/L1 combine all tier fields."""
-            if detail_level == "L2":
-                return r.get("content") or ""
-            return " ".join(filter(None, [
-                r.get("content"), r.get("l1_summary"), r.get("l0_summary"),
-            ]))
-
-        # Hybrid rerank: boost results that contain query keywords.
-        for r in results:
-            kw_score = _keyword_overlap(_scorable_text(r), keywords)
-            sem_score = r.get("score") or 0.0
-            r["_hybrid"] = 0.7 * sem_score + 0.3 * kw_score
-
-        results.sort(key=lambda r: r.get("_hybrid", 0), reverse=True)
-        for r in results:
-            r.pop("_hybrid", None)
+        # Semantic pool only — do not mix BM25 into these scores.
+        results.sort(key=lambda r: r.get("score") or 0.0, reverse=True)
 
         # Date-range post-filter (client-side; OV search has no native support).
         dt_after = _parse_iso_dt(saved_after)
@@ -407,26 +433,16 @@ class OpenVikingMemoryBackend:
         if dt_after or dt_before:
             results = _filter_by_date(results, dt_after, dt_before)
 
-        # Guaranteed BM25 slot: suppress only when a result both covers
-        # the query (>=80%) *and* leads with those keywords.  A citing
-        # workflow that quotes the gold title later must not win.
-        top_slice = results[:top_k]
-        has_primary = any(
-            _keyword_overlap(_scorable_text(r), keywords) >= EXACT_MATCH_COVERAGE
-            and _lead_match(_scorable_text(r), keywords)
-            for r in top_slice
+        n_sem, n_bm25 = _slot_counts(top_k)
+        sem_kept = results[:n_sem]
+        bm25_holder = await self._keyword_fallback(
+            query, keywords, category, detail_level,
+            exclude_uris={r["uri"] for r in sem_kept},
+            dt_after=dt_after,
+            dt_before=dt_before,
+            limit=n_bm25,
         )
-        kw_hit = None
-        if not has_primary:
-            kw_hit = await self._keyword_fallback(
-                query, keywords, category, detail_level,
-                exclude_uris={r["uri"] for r in results},
-                dt_after=dt_after,
-                dt_before=dt_before,
-            )
-        return _merge_keyword_hit(
-            top_slice, kw_hit, top_k, keywords, _scorable_text,
-        )
+        return _merge_bm25_proportion(results, bm25_holder, top_k)
 
     async def _keyword_fallback(
         self,
@@ -437,16 +453,19 @@ class OpenVikingMemoryBackend:
         exclude_uris: set[str] | None = None,
         dt_after: datetime | None = None,
         dt_before: datetime | None = None,
-    ) -> dict | None:
-        """BM25-style keyword scan over listed memories.
+        limit: int = 1,
+    ) -> list[dict]:
+        """Fill the dedicated BM25 holder from listed memories.
 
         Scans listed memories (category-scoped first, then all) and
-        returns the best keyword match not already in semantic results.
+        returns up to *limit* keyword matches not in *exclude_uris*.
         Date filters use the URI filename timestamp and run before the
         list cap so an older gold in a tight window is kept.
-        Gracefully returns None on any I/O error.
+        Gracefully returns an empty list on any I/O error.
         """
         exclude_uris = exclude_uris or set()
+        if limit <= 0:
+            return []
 
         try:
             listing = await self.list_memories(
@@ -463,14 +482,14 @@ class OpenVikingMemoryBackend:
                     dt_before=dt_before,
                 )
         except (httpx.HTTPError, AttributeError, TypeError):
-            return None
+            return []
 
         if not listing:
-            return None
+            return []
 
-        best: dict | None = None
-        best_rank = (0.0, 0)
+        hits: list[tuple[tuple[float, int], dict]] = []
         reads = 0
+        perfect = 0
 
         for item in listing:
             uri = item.get("uri", "")
@@ -497,23 +516,24 @@ class OpenVikingMemoryBackend:
                 continue
             body = _strip_frontmatter(content)
             rank = _keyword_rank(body, keywords)
-            if rank > best_rank:
-                best_rank = rank
-                cat = _category_from_uri(uri)
-                saved_at = _saved_at_from_uri(uri) or item.get("saved_at")
-                best = {
-                    "content": body,
-                    "category": cat,
-                    "saved_at": saved_at,
-                    "uri": uri,
-                    "score": round(best_rank[0], 4),
-                }
-            if best_rank[0] >= 1.0 and best_rank[1] == 1:
-                break
+            if rank[0] < MIN_KEYWORD_COVERAGE:
+                continue
+            cat = _category_from_uri(uri)
+            saved_at = _saved_at_from_uri(uri) or item.get("saved_at")
+            hits.append((rank, {
+                "content": body,
+                "category": cat,
+                "saved_at": saved_at,
+                "uri": uri,
+                "score": round(rank[0], 4),
+            }))
+            if rank[0] >= 1.0 and rank[1] == 1:
+                perfect += 1
+                if perfect >= limit:
+                    break
 
-        if best and best_rank[0] >= MIN_KEYWORD_COVERAGE:
-            return best
-        return None
+        hits.sort(key=lambda t: t[0], reverse=True)
+        return [h[1] for h in hits[:limit]]
 
     async def _fetch_vlm_abstracts(
         self, query: str, category: str, top_k: int,

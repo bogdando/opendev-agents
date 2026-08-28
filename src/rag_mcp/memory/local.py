@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from rag_mcp.constants import EXACT_MATCH_COVERAGE, SEARCH_STOP_WORDS
+from rag_mcp.constants import SEARCH_STOP_WORDS
 from rag_mcp.memory import VALID_CATEGORIES
 
 if TYPE_CHECKING:
@@ -89,14 +89,7 @@ class LocalMemoryBackend:
         if not keywords:
             return results
 
-        has_kw = any(
-            sum(1 for kw in keywords if kw in r["content"].lower())
-            >= len(keywords) * EXACT_MATCH_COVERAGE
-            for r in results
-        )
-        if has_kw:
-            return results
-
+        # Always run BM25: a keyword-heavy semantic hit must not skip gold.
         best_kw = self._keyword_recall(query, memories, 1)
         if best_kw:
             seen_uris = {r["uri"] for r in results}

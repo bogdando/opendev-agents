@@ -14,11 +14,12 @@ SEARCH_STOP_WORDS = frozenset({
 # Minimum keyword overlap for a fallback result to be accepted.
 MIN_KEYWORD_COVERAGE = 0.5
 
-# Threshold for suppressing the keyword fallback: only results with
-# near-exact keyword coverage *and* a lead-window match prevent the
-# BM25 scan. A citing document that quotes the query later in the body
-# must not suppress the true gold.
+# Near-exact keyword coverage used by the mock search BM25 swap.
 EXACT_MATCH_COVERAGE = 0.8
+
+# Fraction of top_k reserved for the dedicated BM25 holder when
+# merging into the semantic pool (70/30). Semantic keeps the rest.
+BM25_MERGE_RATIO = 0.3
 
 # Characters at the start of a document used to decide whether the
 # query is the subject (gold) vs a citation later in the body.

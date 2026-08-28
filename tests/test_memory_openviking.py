@@ -10,15 +10,17 @@ import httpx
 
 from rag_mcp.memory.openviking import (
     OpenVikingMemoryBackend,
+    _align_bm25_scores,
     _build_memory_dict,
     _category_from_uri,
     _filter_by_date,
     _keyword_overlap,
     _lead_match,
-    _merge_keyword_hit,
+    _merge_bm25_proportion,
     _parse_iso_dt,
     _query_keywords,
     _saved_at_from_uri,
+    _slot_counts,
 )
 
 
@@ -1539,7 +1541,7 @@ class TestKeywordHelpers(unittest.TestCase):
 
 
 class TestHybridRecallKeywordFallback(unittest.TestCase):
-    """Guaranteed BM25 slot: keyword fallback fires when semantic misses."""
+    """BM25 keyword fallback always runs after semantic search."""
 
     def setUp(self):
         self.backend = OpenVikingMemoryBackend(
@@ -1595,8 +1597,8 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         contents = [r["content"] for r in results]
         self.assertTrue(any("REFERENCE RESULTS" in c for c in contents))
 
-    def test_no_fallback_when_semantic_has_keyword_coverage(self):
-        """Semantic results contain query keywords → no fallback needed."""
+    def test_fallback_always_runs_when_semantic_already_matches(self):
+        """Lead-matching semantic hit still scans BM25; duplicate URI is skipped."""
         search_response = {
             "status": "ok",
             "result": {
@@ -1608,11 +1610,14 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
                 }],
             },
         }
-        mock_resp = _mock_response(search_response)
+        ls_response = {"entries": []}
+        mock_search = _mock_response(search_response)
+        mock_ls = _mock_response(ls_response)
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
-            client_instance.post.return_value = mock_resp
+            client_instance.post.return_value = mock_search
+            client_instance.get.return_value = mock_ls
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1622,8 +1627,8 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
             )
 
         self.assertEqual(1, len(results))
-        # No GET calls for list_memories or _read_content
-        client_instance.get.assert_not_called()
+        client_instance.get.assert_called()
+        self.assertIn("REFERENCE RESULTS", results[0]["content"])
 
     def test_keyword_fallback_deduplicates_by_uri(self):
         """Fallback skips URIs already present in semantic results."""
@@ -1816,6 +1821,68 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         self.assertEqual(gold_uri, results[0]["uri"])
         self.assertIn("RAG_MCP_TIERED_RETRIEVAL", results[0]["content"])
 
+    def test_lead_matching_meta_still_runs_fallback(self):
+        """A later note that *starts* with the query must not skip BM25."""
+        meta = (
+            "Keyword-only recall test for query "
+            "'REFERENCE RESULTS for RAG MCP summarizer tests' "
+            "(terms: reference, results, rag, mcp, summarizer, tests)."
+        )
+        gold = (
+            "REFERENCE RESULTS for RAG MCP summarizer tests. Gold body."
+        )
+        gold_uri = (
+            "viking://user/testuser/memories/context/20260826T112211Z.md"
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [{
+                    "uri": (
+                        "viking://user/testuser/memories/workflow/"
+                        "20260827T162635Z.md"
+                    ),
+                    "score": 0.95,
+                    "content": meta,
+                    "category": "workflow",
+                }],
+            },
+        }
+        ls_response = {
+            "entries": [{
+                "name": "20260826T112211Z.md",
+                "uri": gold_uri,
+                "updated_at": "2026-08-28",
+            }],
+        }
+        read_response = {"status": "ok", "result": gold}
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = _mock_response(
+                search_response
+            )
+            client_instance.get.side_effect = [
+                _mock_response(ls_response),
+                _mock_response(read_response),
+            ]
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS for RAG MCP summarizer tests",
+                    top_k=5,
+                )
+            )
+
+        client_instance.get.assert_called()
+        uris = [r["uri"] for r in results]
+        self.assertIn(gold_uri, uris)
+
     def test_fallback_replaces_citing_hit_when_top_k_full(self):
         """BM25 gold replaces a citing semantic hit at top_k=1 (no append-slice drop)."""
         citing = (
@@ -1924,8 +1991,8 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
             "2026-08-26T11:22:11+00:00", results[0]["saved_at"],
         )
 
-    def test_hybrid_rerank_boosts_keyword_matches(self):
-        """Hybrid reranking promotes results with keyword overlap."""
+    def test_semantic_pool_not_reranked_by_keywords(self):
+        """Semantic entries keep embedding order; BM25 is a separate holder."""
         search_response = {
             "status": "ok",
             "result": {
@@ -1945,12 +2012,17 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
                 ],
             },
         }
-        mock_resp = _mock_response(search_response)
+        ls_response = {"entries": []}
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
-            client_instance.post.return_value = mock_resp
-            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.post.return_value = _mock_response(
+                search_response
+            )
+            client_instance.get.return_value = _mock_response(ls_response)
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
@@ -1960,8 +2032,11 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
                 )
             )
 
-        # Keyword-bearing result should be promoted to first by hybrid score
-        self.assertIn("REFERENCE RESULTS", results[0]["content"])
+        self.assertEqual(
+            "viking://user/testuser/memories/context/no_kw.md",
+            results[0]["uri"],
+        )
+        self.assertEqual(0.95, results[0]["score"])
 
 
 class TestLeadMatch(unittest.TestCase):
@@ -1986,7 +2061,6 @@ class TestLeadMatch(unittest.TestCase):
         self.assertGreaterEqual(_keyword_overlap(text, kws), 0.8)
 
     def test_merge_promotes_gold_over_citation(self):
-        kws = _query_keywords("REFERENCE RESULTS RAG MCP summarizer tests")
         citing = {
             "uri": "workflow.md",
             "content": (
@@ -1994,18 +2068,54 @@ class TestLeadMatch(unittest.TestCase):
                 + ("padding " * 30)
                 + "REFERENCE RESULTS for RAG MCP summarizer tests."
             ),
+            "score": 0.92,
         }
         gold = {
             "uri": "gold.md",
             "content": "REFERENCE RESULTS for RAG MCP summarizer tests. Gold.",
+            "score": 1.0,
         }
-
-        def scorable(r):
-            return r.get("content") or ""
-
-        merged = _merge_keyword_hit([citing], gold, 1, kws, scorable)
+        merged = _merge_bm25_proportion([citing], [gold], 1)
         self.assertEqual(1, len(merged))
         self.assertEqual("gold.md", merged[0]["uri"])
+        self.assertEqual(1.0, merged[0]["score"])
+
+        tied = _merge_bm25_proportion([citing], [gold], 2)
+        self.assertEqual(2, len(tied))
+        self.assertEqual("gold.md", tied[0]["uri"])
+        self.assertEqual(0.92, tied[0]["score"])
+
+    def test_slot_counts_70_30(self):
+        self.assertEqual((7, 3), _slot_counts(10))
+        self.assertEqual((0, 1), _slot_counts(1))
+        self.assertEqual((3, 2), _slot_counts(5))
+
+    def test_merge_70_30_aligns_bm25_max_to_semantic_max(self):
+        semantic = [
+            {"uri": f"s{i}", "content": f"sem {i}", "score": 0.9 - i * 0.01}
+            for i in range(10)
+        ]
+        bm25 = [
+            {"uri": "b0", "content": "gold", "score": 1.0},
+            {"uri": "b1", "content": "kw", "score": 0.5},
+            {"uri": "b2", "content": "kw2", "score": 0.4},
+        ]
+        merged = _merge_bm25_proportion(semantic, bm25, 10)
+        self.assertEqual(10, len(merged))
+        sem_uris = {r["uri"] for r in merged if r["uri"].startswith("s")}
+        bm_uris = {r["uri"] for r in merged if r["uri"].startswith("b")}
+        self.assertEqual(7, len(sem_uris))
+        self.assertEqual({"b0", "b1", "b2"}, bm_uris)
+        self.assertNotIn("s7", sem_uris)
+        gold = next(r for r in merged if r["uri"] == "b0")
+        self.assertEqual(0.9, gold["score"])
+        self.assertEqual("b0", merged[0]["uri"])
+
+    def test_align_bm25_scores_scales_to_sem_max(self):
+        bm25 = [{"score": 1.0}, {"score": 0.5}]
+        _align_bm25_scores(bm25, 0.9)
+        self.assertEqual(0.9, bm25[0]["score"])
+        self.assertEqual(0.45, bm25[1]["score"])
 
 
 class TestSavedAtFromUri(unittest.TestCase):

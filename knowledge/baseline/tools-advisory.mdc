@@ -4,12 +4,11 @@ alwaysApply: true
 globs: []
 ---
 
-NEVER batch search/recall tools in parallel for tools of the same mcp instance.
+NEVER batch search/recall tools in parallel for tools of the same mcp instance
 
-MANDATORY always use consequent progressive disclosure in <prefix>_search() and recall():
-* detail_level="L0" for initial broadly scoped scanning and following recovery hints
-* L1 for elaborating topics by more precise queries
-* L2 for exact content - code, configs, full procedures - of a best match by a most precise query
+MANDATORY always use progressive disclosure in <prefix>_search() and recall()
+(saved_after and saved_before only works with recall tool). When L1 search() provides
+sufficient context for the task, avoild L2 calls.
 
 MANDATORY always stop any context retrieval and tools calling loops after 5 attempts
 for each call/tool type inside of a single instance of prompt, thinking process, subagent

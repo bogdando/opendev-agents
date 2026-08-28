@@ -12,8 +12,11 @@ from rag_mcp.memory.openviking import (
     OpenVikingMemoryBackend,
     _build_memory_dict,
     _category_from_uri,
+    _filter_by_date,
     _keyword_overlap,
+    _parse_iso_dt,
     _query_keywords,
+    _saved_at_from_uri,
 )
 
 
@@ -568,7 +571,7 @@ class TestRecall(unittest.TestCase):
             asyncio.run(self.backend.recall("query", top_k=3))
 
         payload = client_instance.post.call_args[1]["json"]
-        self.assertEqual(3, payload["limit"])
+        self.assertEqual(9, payload["limit"])  # always top_k * 3
 
 
 class TestRecallDedup(unittest.TestCase):
@@ -1572,12 +1575,12 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         # Only the original result — fallback found no new URI
         self.assertEqual(1, len(results))
 
-    def test_search_limit_scales_with_detail_level(self):
-        """search_limit adapts: L0=×3, L1=×2, L2=×1."""
+    def test_search_limit_always_x3(self):
+        """search_limit is always top_k * 3 for all detail levels."""
         search_response = {"status": "ok", "result": {"memories": []}}
         mock_resp = _mock_response(search_response)
 
-        for detail, expected_factor in [("L0", 3), ("L1", 2), ("L2", 1)]:
+        for detail in ("L0", "L1", "L2"):
             with patch("httpx.AsyncClient") as mock_client_cls:
                 client_instance = AsyncMock()
                 client_instance.post.return_value = mock_resp
@@ -1591,8 +1594,8 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
 
             payload = client_instance.post.call_args[1]["json"]
             self.assertEqual(
-                5 * expected_factor, payload["limit"],
-                f"detail_level={detail} should use limit={5 * expected_factor}",
+                15, payload["limit"],
+                f"detail_level={detail} should always use limit=15 (top_k*3)",
             )
 
     def test_partial_keyword_coverage_does_not_suppress_fallback(self):
@@ -1690,6 +1693,212 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
 
         # Keyword-bearing result should be promoted to first by hybrid score
         self.assertIn("REFERENCE RESULTS", results[0]["content"])
+
+
+class TestSavedAtFromUri(unittest.TestCase):
+    """Extract ISO timestamp from viking memory URI filenames."""
+
+    def test_standard_filename(self):
+        uri = "viking://user/default/memories/context/20260826T112211Z.md"
+        self.assertEqual(_saved_at_from_uri(uri), "2026-08-26T11:22:11+00:00")
+
+    def test_no_extension(self):
+        uri = "viking://user/default/memories/workflow/20260101T000000Z"
+        self.assertEqual(_saved_at_from_uri(uri), "2026-01-01T00:00:00+00:00")
+
+    def test_non_timestamp_filename(self):
+        uri = "viking://user/default/memories/context/random-note.md"
+        self.assertEqual(_saved_at_from_uri(uri), "")
+
+    def test_empty_uri(self):
+        self.assertEqual(_saved_at_from_uri(""), "")
+
+
+class TestParseIsoDt(unittest.TestCase):
+    """Parse ISO 8601 date/datetime strings."""
+
+    def test_date_only(self):
+        dt = _parse_iso_dt("2026-08-26")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.month, 8)
+        self.assertEqual(dt.day, 26)
+
+    def test_datetime_with_offset(self):
+        dt = _parse_iso_dt("2026-08-26T11:22:11+00:00")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt.hour, 11)
+        self.assertEqual(dt.minute, 22)
+
+    def test_datetime_with_z(self):
+        dt = _parse_iso_dt("2026-08-26T11:22:11Z")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt.hour, 11)
+
+    def test_empty_string(self):
+        self.assertIsNone(_parse_iso_dt(""))
+
+    def test_invalid_string(self):
+        self.assertIsNone(_parse_iso_dt("not-a-date"))
+
+
+class TestFilterByDate(unittest.TestCase):
+    """Client-side date-range filtering."""
+
+    def setUp(self):
+        self.items = [
+            {"saved_at": "2026-08-25T10:00:00+00:00", "content": "day25"},
+            {"saved_at": "2026-08-26T11:22:11+00:00", "content": "day26"},
+            {"saved_at": "2026-08-27T09:00:00+00:00", "content": "day27"},
+        ]
+
+    def test_after_filter(self):
+        dt_after = _parse_iso_dt("2026-08-26")
+        result = _filter_by_date(self.items, dt_after, None)
+        contents = [r["content"] for r in result]
+        self.assertNotIn("day25", contents)
+        self.assertIn("day26", contents)
+        self.assertIn("day27", contents)
+
+    def test_before_filter(self):
+        dt_before = _parse_iso_dt("2026-08-27")
+        result = _filter_by_date(self.items, None, dt_before)
+        contents = [r["content"] for r in result]
+        self.assertIn("day25", contents)
+        self.assertIn("day26", contents)
+        self.assertNotIn("day27", contents)
+
+    def test_range_filter(self):
+        dt_after = _parse_iso_dt("2026-08-26")
+        dt_before = _parse_iso_dt("2026-08-27")
+        result = _filter_by_date(self.items, dt_after, dt_before)
+        self.assertEqual(1, len(result))
+        self.assertEqual("day26", result[0]["content"])
+
+    def test_empty_saved_at_excluded(self):
+        items = [{"saved_at": "", "content": "no-ts"}]
+        dt_after = _parse_iso_dt("2026-08-01")
+        result = _filter_by_date(items, dt_after, None)
+        self.assertEqual(0, len(result))
+
+
+class TestRecallDateFilter(unittest.TestCase):
+    """Integration: recall with saved_after/saved_before narrows results."""
+
+    def setUp(self):
+        self.backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            dedup_turns=0,
+        )
+
+    def test_saved_after_filters_old_memories(self):
+        """Only memories on or after saved_after are returned."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [
+                    {
+                        "uri": "viking://user/testuser/memories/context/20260825T100000Z.md",
+                        "score": 0.9,
+                        "content": "Old memory from Aug 25",
+                        "category": "context",
+                    },
+                    {
+                        "uri": "viking://user/testuser/memories/context/20260826T112211Z.md",
+                        "score": 0.85,
+                        "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                        "category": "context",
+                    },
+                ],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS",
+                    top_k=5,
+                    saved_after="2026-08-26",
+                )
+            )
+
+        contents = [r["content"] for r in results]
+        self.assertNotIn("Old memory from Aug 25", contents)
+        self.assertIn("REFERENCE RESULTS for RAG MCP summarizer tests", contents)
+
+    def test_saved_before_filters_new_memories(self):
+        """Only memories before saved_before are returned."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [
+                    {
+                        "uri": "viking://user/testuser/memories/context/20260826T112211Z.md",
+                        "score": 0.9,
+                        "content": "Target memory",
+                        "category": "context",
+                    },
+                    {
+                        "uri": "viking://user/testuser/memories/context/20260828T090000Z.md",
+                        "score": 0.85,
+                        "content": "Future memory",
+                        "category": "context",
+                    },
+                ],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "memory",
+                    top_k=5,
+                    saved_before="2026-08-27",
+                )
+            )
+
+        contents = [r["content"] for r in results]
+        self.assertIn("Target memory", contents)
+        self.assertNotIn("Future memory", contents)
+
+    def test_overfetch_x3_all_levels(self):
+        """search_limit is always top_k * 3 regardless of detail_level."""
+        search_response = {"status": "ok", "result": {"memories": []}}
+        mock_resp = _mock_response(search_response)
+
+        for detail in ("L0", "L1", "L2"):
+            with patch("httpx.AsyncClient") as mock_client_cls:
+                client_instance = AsyncMock()
+                client_instance.post.return_value = mock_resp
+                client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+                client_instance.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = client_instance
+
+                asyncio.run(
+                    self.backend.recall("query", top_k=5, detail_level=detail)
+                )
+
+            payload = client_instance.post.call_args[1]["json"]
+            self.assertEqual(
+                15, payload["limit"],
+                f"detail_level={detail} should always use limit=15 (top_k*3)",
+            )
 
 
 class TestMemoryPrefix(unittest.TestCase):

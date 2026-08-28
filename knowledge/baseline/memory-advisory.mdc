@@ -10,6 +10,24 @@ locate a system path, repo, file, URL, or when you misused API call or a command
 Read available <prefix>_search, <prefix>_recall, <prefix>_remember tool names from
 knowledge://stores of rag-knowledge mcp.
 
+MANDATORY always use progressive disclosure for <prefix>_recall():
+* detail_level="L0" - scan titles and note saved_at
+* detail_level="L1" - only for relevant items by the L0 topic. Narrow scope with
+  saved_after=saved_at-1h, saved_before=saved_at+1h (8h, 1d, 1m when retrying).
+  Use timezone-aware ISO stamps (e.g. 2026-08-26T10:22:00+00:00); date-only
+  fails with naive vs aware compare.
+* (optional) detail_level="L2" - for full content of relevant 1-2 items only, by the time window and
+  elaborated query from L1 and L0 results. Always do for recall(), optional for search().
+
+Example: narrow scope when L1 hides good results shown at L0, or L2 hides wanted Lx result:
+  recall(query="RAG summarizer tests", detail_level="L0")
+  → sees good item from 2026-08-26 among noise
+  recall(query="RAG summarizer tests", detail_level="L1", saved_after="2026-08-26", saved_before="2026-08-27")
+  → narrows to that day, gets wanted overview from 2026-08-26T12:00
+  recall(query="REFERENCE RESULTS granite", detail_level="L2", saved_after="2026-08-26T11:00",
+  saved_before="2026-08-26T13:00")
+  → full content of the exact memory
+
 MANDATORY always save memories via <prefix>_remember(content=..., category=...)
 whenever:
 - User states a preference, corrects a mistake or confirms anything

@@ -17,12 +17,18 @@ async def recall(
     top_k: int = 5,
     detail_level: str = "L1",
     client_id: str = "",
+    saved_after: str = "",
+    saved_before: str = "",
 ) -> str:
     """Recall relevant memories from past sessions.
 
     Use at session start to check for relevant context, or when
     the user asks "do you remember...". Returns memories ranked
     by relevance to the query.
+
+    Progressive disclosure workflow: call with L0 first to see
+    timestamps, then narrow with saved_after/saved_before and
+    higher detail_level to drill into specific memories.
 
     Args:
         query: What to recall — task context, topic, or question.
@@ -36,6 +42,12 @@ async def recall(
         client_id: Override session identifier for recall-time
             dedup. When empty, falls back to transport client_id
             or the server-generated session_id.
+        saved_after: ISO 8601 date or datetime lower bound
+            (inclusive). Only return memories saved on or after
+            this time. Examples: "2026-08-26", "2026-08-26T11:00".
+        saved_before: ISO 8601 date or datetime upper bound
+            (exclusive). Only return memories saved before this
+            time. Combine with saved_after for a time window.
     """
     app = get_app_context(ctx)
 
@@ -63,6 +75,8 @@ async def recall(
         embeddings=app.embeddings,
         detail_level=effective_level,
         session_id=session_id,
+        saved_after=saved_after,
+        saved_before=saved_before,
     )
 
     if not memories:

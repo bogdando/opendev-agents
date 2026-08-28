@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 from datetime import UTC, datetime
 
 import httpx
@@ -69,6 +70,60 @@ def _keyword_overlap(text: str, keywords: list[str]) -> float:
     return hits / len(keywords)
 
 
+_TS_RE = re.compile(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z")
+
+
+def _saved_at_from_uri(uri: str) -> str:
+    """Extract ISO 8601 timestamp from a viking memory URI filename.
+
+    URI example: ``viking://user/default/memories/context/20260826T112211Z.md``
+    Returns: ``2026-08-26T11:22:11+00:00`` or empty string.
+    """
+    segment = uri.rsplit("/", 1)[-1] if uri else ""
+    stem = segment.rsplit(".", 1)[0] if "." in segment else segment
+    m = _TS_RE.match(stem)
+    if not m:
+        return ""
+    y, mo, d, h, mi, s = m.groups()
+    return f"{y}-{mo}-{d}T{h}:{mi}:{s}+00:00"
+
+
+def _parse_iso_dt(value: str) -> datetime | None:
+    """Parse an ISO 8601 date or datetime string to a tz-aware datetime.
+
+    Accepts date-only (``2026-08-26``), datetime with offset, or datetime
+    with ``Z`` suffix. Returns None on parse failure.
+    """
+    if not value:
+        return None
+    try:
+        if "T" not in value and len(value) == 10:
+            return datetime.fromisoformat(f"{value}T00:00:00+00:00")
+        normalized = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(normalized)
+    except (ValueError, TypeError):
+        return None
+
+
+def _filter_by_date(
+    items: list[dict],
+    dt_after: datetime | None,
+    dt_before: datetime | None,
+) -> list[dict]:
+    """Keep only items whose saved_at falls within [dt_after, dt_before)."""
+    filtered: list[dict] = []
+    for item in items:
+        ts = _parse_iso_dt(item.get("saved_at", ""))
+        if ts is None:
+            continue
+        if dt_after and ts < dt_after:
+            continue
+        if dt_before and ts >= dt_before:
+            continue
+        filtered.append(item)
+    return filtered
+
+
 def _strip_frontmatter(text: str) -> str:
     """Remove YAML front-matter (``---...---``) from stored content."""
     if not text.startswith("---"):
@@ -95,10 +150,15 @@ def _build_memory_dict(
     appropriate sidecar and leave ``content`` empty (to be filled
     by ``_read_content`` when L2 is requested).
     """
+    saved_at = (
+        item.get("saved_at")
+        or item.get("updated_at")
+        or _saved_at_from_uri(uri)
+    )
     mem: dict = {
         "content": "",
         "category": category,
-        "saved_at": item.get("saved_at", ""),
+        "saved_at": saved_at,
         "uri": uri,
         "score": item.get("score"),
     }
@@ -190,20 +250,17 @@ class OpenVikingMemoryBackend:
         """
         session_id = kwargs.get("session_id", "")
         detail_level = kwargs.get("detail_level", "L2")
+        saved_after = kwargs.get("saved_after", "")
+        saved_before = kwargs.get("saved_before", "")
         use_context = bool(self._dedup_turns and session_id)
 
         target_uri = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
             target_uri = f"{target_uri}/{category}"
 
-        # Widen the candidate pool for keyword post-filtering at lower tiers.
-        # L2 fetches full content — no need to over-fetch.
-        if detail_level == "L2":
-            search_limit = top_k
-        elif detail_level == "L1":
-            search_limit = top_k * 2
-        else:
-            search_limit = top_k * 3
+        # Always over-fetch x3: middleware needs headroom for keyword
+        # post-filtering and date-range narrowing at all detail levels.
+        search_limit = top_k * 3
 
         payload: dict = {
             "query": query,
@@ -302,6 +359,12 @@ class OpenVikingMemoryBackend:
         for r in results:
             r.pop("_hybrid", None)
 
+        # Date-range post-filter (client-side; OV search has no native support).
+        dt_after = _parse_iso_dt(saved_after)
+        dt_before = _parse_iso_dt(saved_before)
+        if dt_after or dt_before:
+            results = _filter_by_date(results, dt_after, dt_before)
+
         # Guaranteed BM25 slot: only suppress fallback if a result has
         # near-exact keyword coverage (>=80%).  Partial matches get the
         # hybrid boost above but don't prevent finding the true exact match.
@@ -315,6 +378,8 @@ class OpenVikingMemoryBackend:
             kw_hit = await self._keyword_fallback(
                 query, keywords, category, detail_level,
                 exclude_uris={r["uri"] for r in results},
+                dt_after=dt_after,
+                dt_before=dt_before,
             )
             if kw_hit:
                 top_slice.append(kw_hit)
@@ -328,11 +393,14 @@ class OpenVikingMemoryBackend:
         category: str,
         detail_level: str,
         exclude_uris: set[str] | None = None,
+        dt_after: datetime | None = None,
+        dt_before: datetime | None = None,
     ) -> dict | None:
         """BM25-style keyword scan over listed memories.
 
         Scans recent memories (category-scoped first, then all) and
         returns the best keyword match not already in semantic results.
+        Respects date-range filters when provided.
         Gracefully returns None on any I/O error.
         """
         exclude_uris = exclude_uris or set()
@@ -354,6 +422,13 @@ class OpenVikingMemoryBackend:
             uri = item.get("uri", "")
             if not uri or uri in exclude_uris:
                 continue
+            item_ts = _parse_iso_dt(
+                item.get("saved_at") or _saved_at_from_uri(uri)
+            )
+            if dt_after and item_ts and item_ts < dt_after:
+                continue
+            if dt_before and item_ts and item_ts >= dt_before:
+                continue
             try:
                 content = await self._read_content(uri)
             except (httpx.HTTPError, AttributeError, TypeError):
@@ -365,10 +440,14 @@ class OpenVikingMemoryBackend:
             if score > best_score:
                 best_score = score
                 cat = _category_from_uri(uri)
+                saved_at = (
+                    item.get("saved_at")
+                    or _saved_at_from_uri(uri)
+                )
                 best = {
                     "content": content,
                     "category": cat,
-                    "saved_at": item.get("saved_at", ""),
+                    "saved_at": saved_at,
                     "uri": uri,
                     "score": round(best_score, 4),
                 }

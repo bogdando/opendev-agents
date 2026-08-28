@@ -11,22 +11,40 @@ Read available <prefix>_search, <prefix>_recall, <prefix>_remember tool names fr
 knowledge://stores of rag-knowledge mcp.
 
 MANDATORY always use progressive disclosure for <prefix>_recall():
-* detail_level="L0" - scan titles and note saved_at
-* detail_level="L1" - only for relevant items by the L0 topic. Narrow scope with
-  saved_after=saved_at-1h, saved_before=saved_at+1h (8h, 1d, 1m when retrying).
-  Use timezone-aware ISO stamps (e.g. 2026-08-26T10:22:00+00:00); date-only
-  fails with naive vs aware compare.
-* (optional) detail_level="L2" - for full content of relevant 1-2 items only, by the time window and
-  elaborated query from L1 and L0 results. Always do for recall(), optional for search().
+* detail_level="L0", top_k=10 - scan titles and note best matches and saved_at
+* Pick one L0 item. Reuse its exact L0 abstract in the next L1 query.
+  with a narrowed timezone-aware ISO stamps: saved_after=saved_at-1h,
+  saved_before=saved_at+1h (8h, 1d, 1m when retrying). If a later L0
+  cites the same title, adjust saved_before with that timestamp to exclude
+  it.
+* detail_level="L1", top_k=6 - confirm the selected early L0 item: by matching saved_at
+  (having L1 up to 10 minutes older than L0 is allowed) and
+  verifying that overview matches and elaborates the L0 abstract.
+* If not confirmed by L1, retry it with top_k=10.
+* If still not confirmed, pick another L0 item and repeat L1 step. Do not progress to L2 until found
+  L1 item that confirms that L1.
+* You must stop and fail after 5 unconfirmed and 5 failed/errored/timed-out tries.
+* Only after at least one L1 confirmed: detail_level="L2", top_k=3 (optional step for <prefix>_search()).
+  Use same L0-abstract query and the same saved_after/saved_before of best confirmed L1
+  to get full memory content.
+  * Confirm if L2 matches and expands L1. It may also provide details for multiple L1 items.
+  * If confirmed - stop and use that full content plus sibling confirmed L1 items.
+  * If not confirmed by L2, do NOT retry top_k>3 - pick another L1 and repeat L2 recall+confirm loop;
+    if no more confirmed L1 - pick another L0 item and repeat from step 2.
+* If no more L0 items to try, stop and use the best confirmed L1 items.
 
-Example: narrow scope when L1 hides good results shown at L0, or L2 hides wanted Lx result:
-  recall(query="RAG summarizer tests", detail_level="L0")
-  → sees good item from 2026-08-26 among noise
-  recall(query="RAG summarizer tests", detail_level="L1", saved_after="2026-08-26", saved_before="2026-08-27")
-  → narrows to that day, gets wanted overview from 2026-08-26T12:00
-  recall(query="REFERENCE RESULTS granite", detail_level="L2", saved_after="2026-08-26T11:00",
-  saved_before="2026-08-26T13:00")
-  → full content of the exact memory
+Happy path example:
+  recall(query=<task context>, detail_level="L0", top_k=10)
+  → pick one hit; copy its exact L0 abstract and saved_at
+  recall(query=<that exact L0 abstract>, detail_level="L1",
+    saved_after=saved_at-1h, saved_before=saved_at+1h
+    or saved_before=<later citer timestamp, exclusive>)
+  → confirm matching saved_at and an overview that elaborates the abstract.
+    Sibling L1 golds stay - do not drop them as noise.
+  → if L1 misses, pick another L0 item and repeat L1 (do not call L2 yet)
+  recall(query=<same L0 abstract>, detail_level="L2",
+    saved_after/saved_before unchanged)
+  → full content of the confirmed item plus siblings
 
 MANDATORY always save memories via <prefix>_remember(content=..., category=...)
 whenever:

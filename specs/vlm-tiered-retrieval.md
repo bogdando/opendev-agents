@@ -1,6 +1,6 @@
 # VLM Tiered Retrieval Integration
 
-> **Status**: Spec — ready for implementation.
+> **Status**: Spec — implementation drifted.
 
 ## Summary
 

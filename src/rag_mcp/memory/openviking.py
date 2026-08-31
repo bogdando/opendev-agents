@@ -172,10 +172,13 @@ def _saved_at_from_uri(uri: str) -> str:
 
 
 def _parse_iso_dt(value: str) -> datetime | None:
-    """Parse an ISO 8601 date or datetime string to a tz-aware datetime.
+    """Parse an ISO 8601 date or datetime string to a **tz-aware** datetime.
 
-    Accepts date-only (``2026-08-26``), datetime with offset, or datetime
-    with ``Z`` suffix. Returns None on parse failure.
+    Accepts date-only (``2026-08-26``), datetime with offset, datetime
+    with ``Z`` suffix, or bare datetime without timezone (treated as UTC).
+    Always returns a tz-aware datetime so comparisons with stored
+    timestamps never raise ``offset-naive vs offset-aware`` errors.
+    Returns None on parse failure.
     """
     if not value:
         return None
@@ -183,7 +186,10 @@ def _parse_iso_dt(value: str) -> datetime | None:
         if "T" not in value and len(value) == 10:
             return datetime.fromisoformat(f"{value}T00:00:00+00:00")
         normalized = value.replace("Z", "+00:00")
-        return datetime.fromisoformat(normalized)
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt
     except (ValueError, TypeError):
         return None
 
@@ -335,6 +341,12 @@ class OpenVikingMemoryBackend:
         detail_level = kwargs.get("detail_level", "L2")
         saved_after = kwargs.get("saved_after", "")
         saved_before = kwargs.get("saved_before", "")
+
+        # Parse date filters early — before the OV search call — so a
+        # bad input never consumes server-side dedup budget.
+        dt_after = _parse_iso_dt(saved_after)
+        dt_before = _parse_iso_dt(saved_before)
+
         use_context = bool(self._dedup_turns and session_id)
 
         target_uri = self._memory_prefix()
@@ -428,8 +440,6 @@ class OpenVikingMemoryBackend:
         results.sort(key=lambda r: r.get("score") or 0.0, reverse=True)
 
         # Date-range post-filter (client-side; OV search has no native support).
-        dt_after = _parse_iso_dt(saved_after)
-        dt_before = _parse_iso_dt(saved_before)
         if dt_after or dt_before:
             results = _filter_by_date(results, dt_after, dt_before)
 

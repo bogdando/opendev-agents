@@ -2158,6 +2158,15 @@ class TestParseIsoDt(unittest.TestCase):
         self.assertIsNotNone(dt)
         self.assertEqual(dt.hour, 11)
 
+    def test_datetime_naive_coerced_to_utc(self):
+        """Bare datetime without tz suffix is treated as UTC, not naive."""
+        dt = _parse_iso_dt("2026-08-26T10:22:11")
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt.hour, 10)
+        self.assertIsNotNone(dt.tzinfo, "must be tz-aware, not naive")
+        aware = _parse_iso_dt("2026-08-26T11:22:11+00:00")
+        self.assertGreater(aware, dt, "aware > naive-coerced comparison must not raise")
+
     def test_empty_string(self):
         self.assertIsNone(_parse_iso_dt(""))
 
@@ -2194,6 +2203,14 @@ class TestFilterByDate(unittest.TestCase):
     def test_range_filter(self):
         dt_after = _parse_iso_dt("2026-08-26")
         dt_before = _parse_iso_dt("2026-08-27")
+        result = _filter_by_date(self.items, dt_after, dt_before)
+        self.assertEqual(1, len(result))
+        self.assertEqual("day26", result[0]["content"])
+
+    def test_naive_bounds_against_aware_items(self):
+        """Naive input (no Z) must not raise offset-naive vs aware error."""
+        dt_after = _parse_iso_dt("2026-08-26T10:22:11")
+        dt_before = _parse_iso_dt("2026-08-26T12:22:11")
         result = _filter_by_date(self.items, dt_after, dt_before)
         self.assertEqual(1, len(result))
         self.assertEqual("day26", result[0]["content"])
@@ -2299,6 +2316,43 @@ class TestRecallDateFilter(unittest.TestCase):
         contents = [r["content"] for r in results]
         self.assertIn("Target memory", contents)
         self.assertNotIn("Future memory", contents)
+
+    def test_naive_datetime_params_do_not_error(self):
+        """saved_after/saved_before without Z must work, not raise naive/aware."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "memories": [
+                    {
+                        "uri": "viking://user/testuser/memories/context/20260826T112211Z.md",
+                        "score": 0.85,
+                        "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                        "category": "context",
+                    },
+                ],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                self.backend.recall(
+                    "REFERENCE RESULTS",
+                    top_k=6,
+                    category="context",
+                    saved_after="2026-08-26T10:22:11",
+                    saved_before="2026-08-26T12:22:11",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertIn("REFERENCE RESULTS", results[0]["content"])
 
     def test_overfetch_x3_all_levels(self):
         """search_limit is always top_k * 3 regardless of detail_level."""

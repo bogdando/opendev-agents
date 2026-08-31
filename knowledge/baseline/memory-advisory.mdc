@@ -12,17 +12,18 @@ knowledge://stores of rag-knowledge mcp.
 
 MANDATORY always use progressive disclosure for <prefix>_recall():
 * detail_level="L0", top_k=10 - scan titles and note best matches and saved_at
+* If no good L0 items, retry with new client_id for this step only
 * Pick one L0 item. Reuse its exact L0 abstract in the next L1 query.
   with a narrowed timezone-aware ISO stamps: saved_after=saved_at-1h,
-  saved_before=saved_at+1h (8h, 1d, 1m when retrying). If a later L0
+  saved_before=saved_at+1h (8h, 1d, and new client_id in retries). If a later L0
   cites the same title, adjust saved_before with that timestamp to exclude
   it.
 * detail_level="L1", top_k=6 - confirm the selected early L0 item: by matching saved_at
   (having L1 up to 10 minutes older than L0 is allowed) and
   verifying that overview matches and elaborates the L0 abstract.
-* If not confirmed by L1, retry it with top_k=10.
+* If not confirmed by L1, retry it with top_k=10 and another client_id for this step only.
 * If still not confirmed, pick another L0 item and repeat L1 step. Do not progress to L2 until found
-  L1 item that confirms that L1.
+  L1 item that confirms that L0.
 * You must stop and fail after 5 unconfirmed and 5 failed/errored/timed-out tries.
 * Only after at least one L1 confirmed: detail_level="L2", top_k=3 (optional step for <prefix>_search()).
   Use same L0-abstract query and the same saved_after/saved_before of best confirmed L1
@@ -40,8 +41,7 @@ Happy path example:
     saved_after=saved_at-1h, saved_before=saved_at+1h
     or saved_before=<later citer timestamp, exclusive>)
   → confirm matching saved_at and an overview that elaborates the abstract.
-    Sibling L1 golds stay - do not drop them as noise.
-  → if L1 misses, pick another L0 item and repeat L1 (do not call L2 yet)
+    assuming l0 confirmed; sibling confirmed L1 stay - do not drop them as noise.
   recall(query=<same L0 abstract>, detail_level="L2",
     saved_after/saved_before unchanged)
   → full content of the confirmed item plus siblings

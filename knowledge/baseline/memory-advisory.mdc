@@ -29,10 +29,15 @@ MANDATORY always use progressive disclosure for <prefix>_recall():
   Use same L0-abstract query and the same saved_after/saved_before of best confirmed L1
   to get full memory content.
   * Confirm if L2 matches and expands L1. It may also provide details for multiple L1 items.
-  * If confirmed - stop and use that full content plus sibling confirmed L1 items.
+  * If confirmed - note the worked queries for confirmed L1 and siblings, stop and use that full content
+    plus sibling confirmed L1 items.
   * If not confirmed by L2, do NOT retry top_k>3 - pick another L1 and repeat L2 recall+confirm loop;
     if no more confirmed L1 - pick another L0 item and repeat from step 2.
-* If no more L0 items to try, stop and use the best confirmed L1 items.
+* If no more L0 items to try, note the worked queries for confirmed L1 items, stop and use confirmed L1 items.
+
+ALWAYS recall follow-ups and corrections for confirmed results before
+using it: repeat the noted confirmed L1 or L2 query with a future looking saved_after to
+exclude the confirmed item, and added category="correction".
 
 Happy path example:
   recall(query=<task context>, detail_level="L0", top_k=10)
@@ -45,6 +50,11 @@ Happy path example:
   recall(query=<same L0 abstract>, detail_level="L2",
     saved_after/saved_before unchanged)
   → full content of the confirmed item plus siblings
+  recall(query=<same L0 abstract>, detail_level="L2", category="correction",
+      saved_after/saved_before future looking to exclude the confirmed item)
+  → corrected content of the confirmed item, or nothing additional (fallback to
+    confirmed full content)
+  (repeat recalling corrections for confirmed siblings)
 
 MANDATORY always save memories via <prefix>_remember(content=..., category=...)
 whenever:

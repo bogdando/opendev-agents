@@ -81,7 +81,8 @@ class TestExtractiveApproximation(unittest.TestCase):
 class TestSelectContent(unittest.TestCase):
     def test_l0_uses_sidecar(self):
         metadata = {"l0_summary": "Concise L0 abstract."}
-        result = _select_content("Full text here", metadata, "L0")
+        full = "Full text here with enough content to be longer than the summary itself."
+        result = _select_content(full, metadata, "L0")
         self.assertEqual("Concise L0 abstract.", result)
 
     def test_l0_falls_back_to_extractive(self):
@@ -90,7 +91,8 @@ class TestSelectContent(unittest.TestCase):
 
     def test_l1_uses_sidecar(self):
         metadata = {"l1_summary": "L1 overview paragraph."}
-        result = _select_content("Full text here", metadata, "L1")
+        full = "Full text here with enough content to be longer than the summary itself."
+        result = _select_content(full, metadata, "L1")
         self.assertEqual("L1 overview paragraph.", result)
 
     def test_l1_falls_back_to_extractive(self):

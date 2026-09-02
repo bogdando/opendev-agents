@@ -2,11 +2,18 @@
 
 Supports tiered rendering (L0/L1/L2) when results carry sidecar
 summaries or when extractive approximation is needed.
+
+Implements compression gain check: if a summary (L0/L1) provides no
+compression gain compared to the original (size >= original), falls back
+to returning the original instead.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 _SEPARATOR = "\n\n---\n\n"
 _BUDGET_MARKER = "\n\n[Budget reached — additional results omitted]"
@@ -15,6 +22,19 @@ DetailLevel = Literal["L0", "L1", "L2"]
 
 _L0_MAX_TOKENS = 100
 _L1_MAX_CHARS = 2000
+
+
+def _has_compression_gain(summary: str, original: str) -> bool:
+    """Check if summary provides compression gain over original.
+    
+    Returns True if summary is shorter than original (has compression gain).
+    Returns False if summary is equal to or longer than original (no gain).
+    
+    Uses character count for simplicity; can be enhanced with tokenizer later.
+    """
+    if not summary or not original:
+        return False
+    return len(summary) < len(original)
 
 
 def _extract_first_sentence(text: str) -> str:
@@ -63,8 +83,9 @@ def format_results(
         full_text = r.get("text", "")
         score = r.get("score")
         metadata = r.get("metadata", {})
+        content_id = r.get("id", r.get("source", "unknown"))
 
-        content = _select_content(full_text, metadata, detail_level)
+        content = _select_content(full_text, metadata, detail_level, content_id)
 
         header = f"## {title}"
         if score is not None:
@@ -90,17 +111,63 @@ def format_results(
 
 
 def _select_content(
-    full_text: str, metadata: dict, detail_level: DetailLevel
+    full_text: str, metadata: dict, detail_level: DetailLevel,
+    content_id: str = ""
 ) -> str:
-    """Pick the right content tier from sidecars or extractive fallback."""
+    """Pick the right content tier from sidecars or extractive fallback.
+    
+    Implements compression gain check: if a summary (L0/L1) provides no
+    compression gain (size >= original), falls back to returning the
+    original full text instead.
+    
+    Args:
+        full_text: Original full content (L2)
+        metadata: Result metadata dict with optional l0_summary, l1_summary
+        detail_level: Requested detail level (L0, L1, L2)
+        content_id: Optional content identifier for logging
+    
+    Returns:
+        Selected content at appropriate detail level or original if no gain.
+    """
     if detail_level == "L0":
-        if metadata.get("l0_summary"):
-            return metadata["l0_summary"]
+        l0_summary = metadata.get("l0_summary")
+        if l0_summary:
+            if _has_compression_gain(l0_summary, full_text):
+                return l0_summary
+            else:
+                # No compression gain — prefer original
+                logger.debug(
+                    "compression_no_gain",
+                    extra={
+                        "content_id": content_id,
+                        "level": "L0",
+                        "l0_chars": len(l0_summary),
+                        "original_chars": len(full_text),
+                        "ratio": len(l0_summary) / len(full_text) if full_text else 0,
+                    }
+                )
+                return full_text
         return _extract_first_sentence(full_text)
 
     if detail_level == "L1":
-        if metadata.get("l1_summary"):
-            return metadata["l1_summary"]
+        l1_summary = metadata.get("l1_summary")
+        if l1_summary:
+            if _has_compression_gain(l1_summary, full_text):
+                return l1_summary
+            else:
+                # No compression gain — prefer original
+                logger.debug(
+                    "compression_no_gain",
+                    extra={
+                        "content_id": content_id,
+                        "level": "L1",
+                        "l1_chars": len(l1_summary),
+                        "original_chars": len(full_text),
+                        "ratio": len(l1_summary) / len(full_text) if full_text else 0,
+                    }
+                )
+                return full_text
         return _extract_l1(full_text)
 
+    # L2: always return original
     return full_text

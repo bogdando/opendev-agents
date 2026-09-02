@@ -253,6 +253,8 @@ extractive approximation fills in.
   title + first sentence. One line per result. Plain text only.
 - **L1 mode**: OV path uses `l1_summary` field. Mock fallback extracts
   first 2000 chars. Full attribution. Default. Plain text only.
+  - **Corner case handling**: If VLM-generated summary exceeds original L2 in size
+    (rare degenerate case), fall back to L2 instead
 - **L2 mode**: Full text on both paths. Applies existing
   `max_response_chars` budget. **PNG wrap (optical compression) only
   applies at this level.**

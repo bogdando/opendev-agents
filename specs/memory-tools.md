@@ -125,7 +125,6 @@ saying memory is disabled. No overhead.
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OV agent namespace |
 | `RAG_MCP_OPENVIKING_API_KEY` | | OV API key (required for non-localhost / sandbox) |
 | `RAG_MCP_OPENVIKING_DEDUP_THRESHOLD` | `0.85` | Write-time dedup: cosine similarity threshold. Memories scoring above this against existing content are skipped. 0 disables |
-| `RAG_MCP_OPENVIKING_DEDUP_TURNS` | `5` | Recall-time dedup: cross-turn cooldown via OV context face. Prevents re-injecting the same memory across N turns. 0 disables |
 
 ## OpenViking "memories only" configuration
 

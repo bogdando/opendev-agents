@@ -349,26 +349,20 @@ class TestVlmAbstractEnrichment(unittest.TestCase):
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=0,
             vlm_enabled=True,
         )
 
-    def test_recall_enriches_l0_from_resource_abstracts(self):
+    def test_recall_enriches_l0_from_inline_resources(self):
+        """Context-mode inline resources supply VLM abstract for l0."""
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/doc.md",
                     "score": 0.8,
-                    "content": "Full content here",
-                    "abstract": "",
+                    "text": "Full content here",
+                    "detail": "full",
                 }],
-                "resources": [],
-            },
-        }
-        resource_response = {
-            "status": "ok",
-            "result": {
                 "resources": [{
                     "uri": "viking://user/testuser/resources/memories/learning/doc.md/doc.md",
                     "score": 0.7,
@@ -377,31 +371,42 @@ class TestVlmAbstractEnrichment(unittest.TestCase):
             },
         }
         mock_search = _mock_response(search_response)
-        mock_resource = _mock_response(resource_response)
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
-            client_instance.post.side_effect = [mock_search, mock_resource]
+            client_instance.post.return_value = mock_search
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            results = asyncio.run(self.backend.recall("query", detail_level="L0"))
+            results = asyncio.run(
+                self.backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
 
         self.assertEqual(1, len(results))
-        self.assertEqual("VLM-generated one-line abstract", results[0]["l0_summary"])
+        self.assertEqual(
+            "VLM-generated one-line abstract", results[0]["l0_summary"],
+        )
+        self.assertEqual(1, client_instance.post.call_count)
 
-    def test_recall_skips_resource_search_when_abstracts_present(self):
+    def test_recall_entry_abstract_not_overwritten_by_vlm(self):
+        """Entry with detail=abstract already has l0; VLM doesn't override."""
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/doc.md",
                     "score": 0.8,
-                    "content": "Full content",
-                    "abstract": "Already has abstract",
+                    "text": "Already has abstract",
+                    "detail": "abstract",
                 }],
-                "resources": [],
+                "resources": [{
+                    "uri": "viking://user/testuser/resources/memories/learning/doc.md/doc.md",
+                    "score": 0.7,
+                    "abstract": "VLM resource abstract",
+                }],
             },
         }
         mock_resp = _mock_response(search_response)
@@ -413,30 +418,40 @@ class TestVlmAbstractEnrichment(unittest.TestCase):
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            results = asyncio.run(self.backend.recall("query", detail_level="L0"))
+            results = asyncio.run(
+                self.backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
 
-        self.assertEqual("Already has abstract", results[0]["l0_summary"])
+        self.assertEqual(
+            "Already has abstract", results[0]["l0_summary"],
+        )
         self.assertEqual(1, client_instance.post.call_count)
 
 
-    def test_vlm_disabled_skips_resource_search(self):
+    def test_vlm_disabled_skips_resource_enrichment(self):
         """When vlm_enabled=False, recall does no resource enrichment."""
         backend = OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=0,
             vlm_enabled=False,
         )
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/doc.md",
                     "score": 0.8,
-                    "content": "Full content here",
+                    "text": "Full content here",
+                    "detail": "full",
                 }],
-                "resources": [],
+                "resources": [{
+                    "uri": "viking://user/testuser/resources/memories/learning/doc.md/doc.md",
+                    "score": 0.7,
+                    "abstract": "VLM abstract ignored",
+                }],
             },
         }
         mock_resp = _mock_response(search_response)
@@ -448,7 +463,11 @@ class TestVlmAbstractEnrichment(unittest.TestCase):
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            results = asyncio.run(backend.recall("query", detail_level="L0"))
+            results = asyncio.run(
+                backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
 
         self.assertEqual(1, len(results))
         self.assertNotIn("l0_summary", results[0])
@@ -469,12 +488,12 @@ class TestRecall(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/workflow/20260527.md",
                         "score": 0.85,
-                        "content": "",
-                        "category": "workflow",
+                        "text": "",
+                        "detail": "full",
                     }
                 ],
                 "resources": [],
@@ -496,7 +515,9 @@ class TestRecall(unittest.TestCase):
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            results = asyncio.run(self.backend.recall("memory content"))
+            results = asyncio.run(self.backend.recall(
+                "memory content", detail_level="L2",
+            ))
 
         self.assertEqual(1, len(results))
         self.assertEqual("workflow", results[0]["category"])
@@ -507,22 +528,24 @@ class TestRecall(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/learning/item.md",
                         "score": 0.9,
-                        "content": "Inline content from search",
-                        "category": "learning",
+                        "text": "Inline content from search",
+                        "detail": "full",
                     }
                 ],
                 "resources": [],
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -532,20 +555,44 @@ class TestRecall(unittest.TestCase):
         self.assertEqual("Inline content from search", results[0]["content"])
 
     def test_recall_with_category_filter(self):
-        search_response = {"status": "ok", "result": {"memories": []}}
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [
+                    {
+                        "uri": "viking://user/testuser/memories/preference/a.md",
+                        "text": "pref content",
+                        "detail": "full",
+                        "score": 0.9,
+                    },
+                    {
+                        "uri": "viking://user/testuser/memories/learning/b.md",
+                        "text": "learning content",
+                        "detail": "full",
+                        "score": 0.8,
+                    },
+                ],
+            },
+        }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            asyncio.run(self.backend.recall("query", category="preference"))
+            results = asyncio.run(
+                self.backend.recall("query", category="preference")
+            )
 
         payload = client_instance.post.call_args[1]["json"]
-        self.assertIn("/preference", payload["target_uri"])
+        self.assertNotIn("target_uri", payload)
+        self.assertEqual(1, len(results))
+        self.assertEqual("preference", results[0]["category"])
 
     def test_recall_http_error_returns_empty(self):
         mock_resp = _mock_response({}, status_code=500)
@@ -585,7 +632,6 @@ class TestRecallDedup(unittest.TestCase):
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=5,
         )
         search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
@@ -604,13 +650,13 @@ class TestRecallDedup(unittest.TestCase):
         self.assertEqual("cu-abc123", payload["session_id"])
         self.assertEqual(5, payload["dedup_turns"])
         self.assertNotIn("target_uri", payload)
+        self.assertNotIn("auto_create", payload)
 
     def test_recall_context_mode_parses_entries(self):
         backend = OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=5,
         )
         search_response = {
             "status": "ok",
@@ -642,38 +688,12 @@ class TestRecallDedup(unittest.TestCase):
         self.assertEqual("The context mode text content", results[0]["l1_summary"])
         self.assertEqual(0.85, results[0]["score"])
 
-    def test_recall_no_context_face_without_session_id(self):
-        backend = OpenVikingMemoryBackend(
-            url="http://127.0.0.1:1933",
-            user="testuser",
-            agent_id="test-agent",
-            dedup_turns=5,
-        )
-        search_response = {"status": "ok", "result": {"memories": []}}
-        mock_resp = _mock_response(search_response)
-
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            client_instance = AsyncMock()
-            client_instance.post.return_value = mock_resp
-            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-            client_instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = client_instance
-
-            asyncio.run(backend.recall("query"))
-
-        payload = client_instance.post.call_args[1]["json"]
-        self.assertNotIn("mode", payload)
-        self.assertNotIn("session_id", payload)
-        self.assertNotIn("dedup_turns", payload)
-        self.assertIn("target_uri", payload)
-
     def test_recall_fixed_client_id_same_session(self):
         """Same client_id on consecutive calls uses same dedup window."""
         backend = OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=5,
         )
         search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
@@ -701,7 +721,6 @@ class TestRecallDedup(unittest.TestCase):
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=5,
         )
         search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
@@ -721,28 +740,34 @@ class TestRecallDedup(unittest.TestCase):
         self.assertEqual("session-A", payloads[0]["session_id"])
         self.assertEqual("session-B", payloads[1]["session_id"])
 
-    def test_recall_no_context_face_when_dedup_turns_zero(self):
+    def test_recall_auto_generates_session_id_when_empty(self):
+        """recall() without session_id auto-generates one for context mode."""
         backend = OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=0,
         )
-        search_response = {"status": "ok", "result": {"memories": []}}
+        search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
-            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            asyncio.run(backend.recall("query", session_id="cu-abc123"))
+            asyncio.run(backend.recall("query"))
 
         payload = client_instance.post.call_args[1]["json"]
-        self.assertNotIn("mode", payload)
-
+        self.assertEqual("context", payload["mode"])
+        self.assertTrue(
+            len(payload["session_id"]) > 0,
+            "session_id should be auto-generated when not provided",
+        )
+        self.assertNotIn("auto_create", payload)
 
 class TestBuildMemoryDict(unittest.TestCase):
     """Unit tests for _build_memory_dict tier routing."""
@@ -827,7 +852,6 @@ class TestDetailTierRecall(unittest.TestCase):
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=5,
         )
 
     def test_l0_recall_abstract_entry_no_read_content(self):
@@ -969,22 +993,22 @@ class TestDetailTierRecall(unittest.TestCase):
         # GET called for _read_content; keyword fallback may also call list_memories
         self.assertGreaterEqual(client_instance.get.call_count, 1)
 
-    def test_plain_search_no_detail_field(self):
-        """Non-context recall (no detail field) behaves like full."""
-        backend = OpenVikingMemoryBackend(
-            url="http://127.0.0.1:1933",
-            user="testuser",
-            agent_id="test-agent",
-            dedup_turns=0,
-        )
+    def test_old_memory_empty_detail_routes_full_content(self):
+        """Old memory with detail='' uses text as full content (no VLM)."""
+        backend = self._make_backend()
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
-                    "uri": "viking://user/testuser/memories/learning/x.md",
-                    "score": 0.8,
-                    "content": "Full raw content from plain search",
+                "entries": [{
+                    "uri": (
+                        "viking://user/testuser/memories"
+                        "/learning/20260502T120000Z.md"
+                    ),
+                    "score": 0.75, "detail": "",
+                    "text": "Raw content of old memory",
+                    "category": "memories",
                 }],
+                "stats": {},
             },
         }
         mock_resp = _mock_response(search_response)
@@ -992,14 +1016,60 @@ class TestDetailTierRecall(unittest.TestCase):
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
-            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance,
+            )
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
 
-            results = asyncio.run(backend.recall("query", detail_level="L0"))
+            results = asyncio.run(backend.recall(
+                "query", session_id="s1", detail_level="L0",
+            ))
 
-        self.assertEqual("Full raw content from plain search", results[0]["content"])
+        self.assertEqual(1, len(results))
+        self.assertEqual(
+            "Raw content of old memory", results[0]["content"],
+        )
         self.assertNotIn("l0_summary", results[0])
+
+    def test_full_detail_entry_uses_text_as_content(self):
+        """Entry with detail='full' provides text as content."""
+        backend = self._make_backend()
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": (
+                        "viking://user/testuser/memories"
+                        "/workflow/20260601T100000Z.md"
+                    ),
+                    "score": 0.85, "detail": "full",
+                    "text": "Complete workflow memory content",
+                    "category": "memories",
+                }],
+                "stats": {},
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance,
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(backend.recall(
+                "query", session_id="s1", detail_level="L2",
+            ))
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(
+            "Complete workflow memory content",
+            results[0]["content"],
+        )
 
 
 class TestRecallFieldMapping(unittest.TestCase):
@@ -1015,21 +1085,23 @@ class TestRecallFieldMapping(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/item.md",
                     "score": 0.90,
-                    "content": "full content here",
-                    "category": "learning",
+                    "text": "full content here",
+                    "detail": "full",
                     "abstract": "A one-line VLM-generated abstract.",
                     "overview": None,
                 }],
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1043,21 +1115,23 @@ class TestRecallFieldMapping(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/item.md",
                     "score": 0.90,
-                    "content": "full content here",
-                    "category": "learning",
+                    "text": "full content here",
+                    "detail": "full",
                     "abstract": "Short abstract.",
                     "overview": "A longer VLM-generated overview paragraph.",
                 }],
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1072,11 +1146,11 @@ class TestRecallFieldMapping(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/item.md",
                     "score": 0.90,
-                    "content": "content",
-                    "category": "learning",
+                    "text": "content",
+                    "detail": "full",
                     "l0_summary": "From l0_summary field.",
                     "abstract": "From abstract field.",
                     "l1_summary": "From l1_summary field.",
@@ -1085,10 +1159,12 @@ class TestRecallFieldMapping(unittest.TestCase):
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1102,21 +1178,23 @@ class TestRecallFieldMapping(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/item.md",
                     "score": 0.90,
-                    "content": "content",
-                    "category": "learning",
+                    "text": "content",
+                    "detail": "full",
                     "abstract": "",
                     "overview": None,
                 }],
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1130,19 +1208,21 @@ class TestRecallFieldMapping(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/item.md",
                     "score": 0.75,
-                    "content": "content",
-                    "category": "learning",
+                    "text": "content",
+                    "detail": "full",
                 }],
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1393,19 +1473,22 @@ class TestRecallCategoryFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/learning/item.md",
                     "score": 0.90,
-                    "content": "some content",
+                    "text": "some content",
+                    "detail": "full",
                     "category": "",
                 }],
             },
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(return_value=client_instance)
             client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = client_instance
@@ -1418,12 +1501,11 @@ class TestRecallCategoryFallback(unittest.TestCase):
 class TestSessionIdPrecedence(unittest.TestCase):
     """Test session_id precedence: client_id param > ctx > app."""
 
-    def _make_backend(self, dedup_turns=5):
+    def _make_backend(self):
         return OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=dedup_turns,
         )
 
     def _run_recall_get_session_id(self, backend, session_id=""):
@@ -1432,10 +1514,12 @@ class TestSessionIdPrecedence(unittest.TestCase):
             "result": {"entries": []},
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(
                 return_value=client_instance,
             )
@@ -1456,18 +1540,20 @@ class TestSessionIdPrecedence(unittest.TestCase):
         )
         self.assertEqual("explicit-42", sid)
 
-    def test_empty_client_id_no_context_mode(self):
-        """No session_id → plain search (no context mode)."""
+    def test_empty_client_id_auto_generates_session(self):
+        """No session_id passed → auto-generated, context mode always."""
         backend = self._make_backend()
         search_response = {
             "status": "ok",
-            "result": {"memories": []},
+            "result": {"entries": []},
         }
         mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
 
         with patch("httpx.AsyncClient") as mock_client_cls:
             client_instance = AsyncMock()
             client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
             client_instance.__aenter__ = AsyncMock(
                 return_value=client_instance,
             )
@@ -1477,8 +1563,8 @@ class TestSessionIdPrecedence(unittest.TestCase):
             asyncio.run(backend.recall("query"))
 
         payload = client_instance.post.call_args[1]["json"]
-        self.assertNotIn("session_id", payload)
-        self.assertNotIn("mode", payload)
+        self.assertIn("session_id", payload)
+        self.assertEqual("context", payload["mode"])
 
     def test_fixed_id_persists_across_calls(self):
         backend = self._make_backend()
@@ -1548,7 +1634,6 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=0,
         )
 
     def test_keyword_fallback_fires_when_semantic_has_no_keyword_coverage(self):
@@ -1556,11 +1641,11 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/context/unrelated.md",
                     "score": 0.9,
-                    "content": "Completely unrelated content about kubernetes pods",
-                    "category": "context",
+                    "text": "Completely unrelated content about kubernetes pods",
+                    "detail": "full",
                 }],
             },
         }
@@ -1602,11 +1687,11 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/context/match.md",
                     "score": 0.85,
-                    "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
-                    "category": "context",
+                    "text": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                    "detail": "full",
                 }],
             },
         }
@@ -1635,11 +1720,11 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/context/target.md",
                     "score": 0.5,
-                    "content": "Short unrelated snippet",
-                    "category": "context",
+                    "text": "Short unrelated snippet",
+                    "detail": "full",
                 }],
             },
         }
@@ -1673,7 +1758,7 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
 
     def test_search_limit_always_x3(self):
         """search_limit is always top_k * 3 for all detail levels."""
-        search_response = {"status": "ok", "result": {"memories": []}}
+        search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
 
         for detail in ("L0", "L1", "L2"):
@@ -1705,11 +1790,11 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": "viking://user/testuser/memories/context/partial.md",
                     "score": 0.88,
-                    "content": "Re-run RAG MCP summarizer regression (mock + OKP)",
-                    "category": "context",
+                    "text": "Re-run RAG MCP summarizer regression (mock + OKP)",
+                    "detail": "full",
                 }],
             },
         }
@@ -1775,14 +1860,14 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": (
                         "viking://user/testuser/memories/workflow/"
                         "20260826T112257Z.md"
                     ),
                     "score": 0.92,
-                    "content": citing,
-                    "category": "workflow",
+                    "text": citing,
+                    "detail": "full",
                 }],
             },
         }
@@ -1837,14 +1922,14 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [{
+                "entries": [{
                     "uri": (
                         "viking://user/testuser/memories/workflow/"
                         "20260827T162635Z.md"
                     ),
                     "score": 0.95,
-                    "content": meta,
-                    "category": "workflow",
+                    "text": meta,
+                    "detail": "full",
                 }],
             },
         }
@@ -1896,18 +1981,18 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/workflow/cite.md",
                         "score": 0.99,
-                        "content": citing,
-                        "category": "workflow",
+                        "text": citing,
+                        "detail": "full",
                     },
                     {
                         "uri": "viking://user/testuser/memories/context/other.md",
                         "score": 0.50,
-                        "content": "unrelated pods",
-                        "category": "context",
+                        "text": "unrelated pods",
+                        "detail": "full",
                     },
                 ],
             },
@@ -1952,7 +2037,7 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         gold_uri = (
             "viking://user/testuser/memories/context/20260826T112211Z.md"
         )
-        search_response = {"status": "ok", "result": {"memories": []}}
+        search_response = {"status": "ok", "result": {"entries": []}}
         ls_response = {
             "entries": [{
                 "name": "20260826T112211Z.md",
@@ -1996,18 +2081,18 @@ class TestHybridRecallKeywordFallback(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/context/no_kw.md",
                         "score": 0.95,
-                        "content": "Unrelated high-similarity content about pods",
-                        "category": "context",
+                        "text": "Unrelated high-similarity content about pods",
+                        "detail": "full",
                     },
                     {
                         "uri": "viking://user/testuser/memories/context/has_kw.md",
                         "score": 0.60,
-                        "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
-                        "category": "context",
+                        "text": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                        "detail": "full",
                     },
                 ],
             },
@@ -2230,7 +2315,6 @@ class TestRecallDateFilter(unittest.TestCase):
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
-            dedup_turns=0,
         )
 
     def test_saved_after_filters_old_memories(self):
@@ -2238,18 +2322,18 @@ class TestRecallDateFilter(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/context/20260825T100000Z.md",
                         "score": 0.9,
-                        "content": "Old memory from Aug 25",
-                        "category": "context",
+                        "text": "Old memory from Aug 25",
+                        "detail": "full",
                     },
                     {
                         "uri": "viking://user/testuser/memories/context/20260826T112211Z.md",
                         "score": 0.85,
-                        "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
-                        "category": "context",
+                        "text": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                        "detail": "full",
                     },
                 ],
             },
@@ -2280,18 +2364,18 @@ class TestRecallDateFilter(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/context/20260826T112211Z.md",
                         "score": 0.9,
-                        "content": "Target memory",
-                        "category": "context",
+                        "text": "Target memory",
+                        "detail": "full",
                     },
                     {
                         "uri": "viking://user/testuser/memories/context/20260828T090000Z.md",
                         "score": 0.85,
-                        "content": "Future memory",
-                        "category": "context",
+                        "text": "Future memory",
+                        "detail": "full",
                     },
                 ],
             },
@@ -2322,12 +2406,12 @@ class TestRecallDateFilter(unittest.TestCase):
         search_response = {
             "status": "ok",
             "result": {
-                "memories": [
+                "entries": [
                     {
                         "uri": "viking://user/testuser/memories/context/20260826T112211Z.md",
                         "score": 0.85,
-                        "content": "REFERENCE RESULTS for RAG MCP summarizer tests",
-                        "category": "context",
+                        "text": "REFERENCE RESULTS for RAG MCP summarizer tests",
+                        "detail": "full",
                     },
                 ],
             },
@@ -2356,7 +2440,7 @@ class TestRecallDateFilter(unittest.TestCase):
 
     def test_overfetch_x3_all_levels(self):
         """search_limit is always top_k * 3 regardless of detail_level."""
-        search_response = {"status": "ok", "result": {"memories": []}}
+        search_response = {"status": "ok", "result": {"entries": []}}
         mock_resp = _mock_response(search_response)
 
         for detail in ("L0", "L1", "L2"):
@@ -2376,6 +2460,276 @@ class TestRecallDateFilter(unittest.TestCase):
                 15, payload["limit"],
                 f"detail_level={detail} should always use limit=15 (top_k*3)",
             )
+
+
+class TestCategoryPostFiltering(unittest.TestCase):
+    """Two-level client-side category post-filtering in recall()."""
+
+    def setUp(self):
+        self.backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+        )
+        self.mixed_entries = [
+            {
+                "uri": "viking://user/testuser/memories/workflow/a.md",
+                "text": "workflow memory",
+                "detail": "full",
+                "score": 0.9,
+            },
+            {
+                "uri": (
+                    "viking://user/testuser/"
+                    "resources/memories/workflow/a.md"
+                ),
+                "text": "VLM abstract of workflow",
+                "detail": "abstract",
+                "score": 0.85,
+            },
+            {
+                "uri": "viking://user/testuser/memories/learning/b.md",
+                "text": "learning memory",
+                "detail": "full",
+                "score": 0.8,
+            },
+            {
+                "uri": (
+                    "viking://user/testuser/"
+                    "resources/memories/learning/b.md"
+                ),
+                "text": "VLM abstract of learning",
+                "detail": "abstract",
+                "score": 0.75,
+            },
+            {
+                "uri": "viking://user/testuser/peers/some-peer",
+                "text": "peer entry",
+                "detail": "full",
+                "score": 0.7,
+            },
+            {
+                "uri": "viking://user/testuser/resources/other/x",
+                "text": "non-memory resource",
+                "detail": "full",
+                "score": 0.65,
+            },
+        ]
+
+    def _run_recall(self, category=""):
+        search_response = {
+            "status": "ok",
+            "result": {"entries": self.mixed_entries},
+        }
+        mock_resp = _mock_response(search_response)
+        mock_get_resp = _mock_response({"entries": [], "result": ""})
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.get.return_value = mock_get_resp
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            return asyncio.run(
+                self.backend.recall(
+                    "test query",
+                    top_k=10,
+                    category=category,
+                    session_id="test-session",
+                )
+            )
+
+    def test_level1_excludes_peers_and_non_memory_resources(self):
+        """Level 1: peers/ and resources/other/ excluded."""
+        results = self._run_recall()
+        uris = [r["uri"] for r in results]
+        for uri in uris:
+            self.assertIn("/memories/", uri)
+        self.assertGreater(len(results), 0)
+
+    def test_level1_keeps_both_memory_and_resource_memory_uris(self):
+        """Level 1: both memories/ and resources/memories/ kept."""
+        results = self._run_recall()
+        uris = [r["uri"] for r in results]
+        has_direct = any("testuser/memories/" in u for u in uris)
+        has_resource = any(
+            "resources/memories/" in u for u in uris
+        )
+        self.assertTrue(
+            has_direct,
+            "Direct memory URIs should be kept",
+        )
+        self.assertTrue(
+            has_resource,
+            "VLM resource-of-memory URIs should be kept",
+        )
+
+    def test_level2_narrows_to_requested_category(self):
+        """Level 2: only workflow entries when category=workflow."""
+        results = self._run_recall(category="workflow")
+        for r in results:
+            cat = r["uri"].split("/memories/")[1].split("/")[0]
+            self.assertEqual("workflow", cat)
+
+    def test_level2_excludes_other_categories(self):
+        """Level 2: learning excluded when category=workflow."""
+        results = self._run_recall(category="workflow")
+        uris = [r["uri"] for r in results]
+        for uri in uris:
+            self.assertNotIn("/learning/", uri)
+
+    def test_bare_uri_entry_excluded_by_has_text(self):
+        """Entry with detail=uri and no text passes filter but
+        is excluded by the has_text check downstream."""
+        self.mixed_entries = [
+            {
+                "uri": (
+                    "viking://user/testuser/"
+                    "resources/memories/workflow"
+                ),
+                "text": "",
+                "detail": "uri",
+                "score": 0.5,
+            },
+        ]
+        results = self._run_recall()
+        self.assertEqual(0, len(results))
+
+
+class TestVlmInlineResources(unittest.TestCase):
+    """VLM abstracts arrive via inline resources in context mode."""
+
+    def test_recall_enriches_from_inline_resources(self):
+        """Inline resources enrich l0_summary for matching entries."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            vlm_enabled=True,
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [
+                    {
+                        "uri": (
+                            "viking://user/testuser/"
+                            "memories/workflow/file.md"
+                        ),
+                        "text": "Full workflow content here.",
+                        "detail": "full",
+                        "score": 0.9,
+                    },
+                ],
+                "resources": [
+                    {
+                        "uri": (
+                            "viking://user/testuser/"
+                            "resources/memories/workflow/file.md"
+                        ),
+                        "abstract": "Short VLM summary.",
+                    },
+                ],
+            },
+        }
+        mock_resp = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                backend.recall(
+                    "workflow query",
+                    top_k=5,
+                    session_id="test-vlm-inline",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual("Short VLM summary.", results[0]["l0_summary"])
+
+
+class TestBm25VsDedupInteraction(unittest.TestCase):
+    """BM25 keyword fallback can resurface dedup-suppressed entries."""
+
+    def test_bm25_can_add_entries_not_in_semantic_pool(self):
+        """BM25 fallback adds keyword-matched entries independently
+        of the semantic pool (which may have dedup-suppressed them).
+        """
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+        )
+        semantic_response = {
+            "status": "ok",
+            "result": {
+                "entries": [
+                    {
+                        "uri": (
+                            "viking://user/testuser/"
+                            "memories/workflow/sem.md"
+                        ),
+                        "text": "Semantic match content.",
+                        "detail": "full",
+                        "score": 0.9,
+                    },
+                ],
+            },
+        }
+        bm25_entries = [
+            {
+                "uri": (
+                    "viking://user/testuser/"
+                    "memories/workflow/bm25.md"
+                ),
+                "content": "BM25 keyword matched content.",
+            },
+        ]
+        mock_resp = _mock_response(semantic_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch.object(
+                 backend, "_keyword_fallback",
+                 new_callable=AsyncMock,
+                 return_value=bm25_entries,
+             ):
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                backend.recall(
+                    "keyword match query",
+                    top_k=10,
+                    session_id="test-bm25-dedup",
+                )
+            )
+
+        uris = [r["uri"] for r in results]
+        self.assertIn(
+            "viking://user/testuser/memories/workflow/sem.md",
+            uris,
+        )
+        self.assertIn(
+            "viking://user/testuser/memories/workflow/bm25.md",
+            uris,
+        )
+        self.assertEqual(2, len(results))
 
 
 class TestMemoryPrefix(unittest.TestCase):

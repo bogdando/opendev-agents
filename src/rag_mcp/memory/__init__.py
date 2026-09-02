@@ -65,7 +65,6 @@ def get_memory_backend(config: ServerConfig) -> MemoryProtocol | None:
             agent_id=config.openviking_agent_id,
             api_key=config.openviking_api_key,
             dedup_threshold=config.openviking_dedup_threshold,
-            dedup_turns=config.openviking_dedup_turns,
             vlm_enabled=config.tiered_retrieval,
         )
 

@@ -95,12 +95,6 @@ class ServerConfig(BaseSettings):
         description="Cosine similarity threshold for write-time dedup. "
         "Memories scoring above this against existing content are skipped.",
     )
-    openviking_dedup_turns: int = Field(
-        default=5, ge=0,
-        description="Cross-turn recall dedup cooldown (OV context face). "
-        "0 disables. A 'turn' counts individual messages.",
-    )
-
     @property
     def effective_server_name(self) -> str:
         """MCP server name advertised to clients.

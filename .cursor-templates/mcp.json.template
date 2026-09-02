@@ -19,7 +19,6 @@
         "RAG_MCP_OPENVIKING_AGENT_ID": "rag-mcp-server",
         "RAG_MCP_OPENVIKING_API_KEY": "${OPENVIKING_API_KEY}",
         "RAG_MCP_OPENVIKING_DEDUP_THRESHOLD": "0.85",
-        "RAG_MCP_OPENVIKING_DEDUP_TURNS": "5",
         "NO_PROXY": "${OKPNOPROXY}",
         "no_proxy": "${OKPNOPROXY}"
       }

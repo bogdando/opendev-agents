@@ -24,6 +24,7 @@ import asyncio
 import io
 import logging
 import re
+import uuid
 from datetime import UTC, datetime
 
 import httpx
@@ -284,6 +285,8 @@ def _build_memory_dict(
 class OpenVikingMemoryBackend:
     """Memory backend that delegates to OpenViking's HTTP API."""
 
+    _DEDUP_TURNS = 5
+
     def __init__(
         self,
         url: str = "http://127.0.0.1:1933",
@@ -292,7 +295,6 @@ class OpenVikingMemoryBackend:
         agent_id: str = "rag-mcp-server",
         api_key: str = "",
         dedup_threshold: float = 0.85,
-        dedup_turns: int = 5,
         vlm_enabled: bool = False,
     ) -> None:
         self._url = url.rstrip("/")
@@ -300,7 +302,6 @@ class OpenVikingMemoryBackend:
         self._user = user
         self._agent_id = agent_id
         self._dedup_threshold = dedup_threshold
-        self._dedup_turns = dedup_turns
         self._vlm_enabled = vlm_enabled
         self._headers: dict[str, str] = {
             "X-OpenViking-Account": account,
@@ -320,14 +321,9 @@ class OpenVikingMemoryBackend:
     ) -> list[dict]:
         """Semantic search over stored memories.
 
-        When *session_id* is available and ``dedup_turns > 0``, uses
-        OV's ``mode:"context"`` face which suppresses memories already
-        returned in recent turns.  Context mode requires omitting
-        ``target_uri`` and returns ``entries`` (with ``text`` field)
-        instead of ``memories`` (with ``content`` field).
-
-        Falls back to plain search (with ``target_uri``) when session
-        dedup is disabled or no session_id is provided.
+        Always uses OV's ``mode:"context"`` face which suppresses
+        memories already returned in recent turns.  Context mode
+        returns ``entries`` (with ``text`` and ``detail`` fields).
 
         OV's context-mode entries carry a ``detail`` field indicating
         which tier was served (``"abstract"``, ``"overview"``, or
@@ -337,17 +333,15 @@ class OpenVikingMemoryBackend:
         fetched via ``_read_content()`` only when the caller requests
         L2 and the entry was served at a lower tier.
         """
-        session_id = kwargs.get("session_id", "")
+        session_id = (
+            kwargs.get("session_id", "") or uuid.uuid4().hex[:12]
+        )
         detail_level = kwargs.get("detail_level", "L2")
         saved_after = kwargs.get("saved_after", "")
         saved_before = kwargs.get("saved_before", "")
 
-        # Parse date filters early — before the OV search call — so a
-        # bad input never consumes server-side dedup budget.
         dt_after = _parse_iso_dt(saved_after)
         dt_before = _parse_iso_dt(saved_before)
-
-        use_context = bool(self._dedup_turns and session_id)
 
         target_uri = self._memory_prefix()
         if category and category in VALID_CATEGORIES:
@@ -360,13 +354,10 @@ class OpenVikingMemoryBackend:
         payload: dict = {
             "query": query,
             "limit": search_limit,
+            "mode": "context",
+            "session_id": session_id,
+            "dedup_turns": self._DEDUP_TURNS,
         }
-        if use_context:
-            payload["mode"] = "context"
-            payload["session_id"] = session_id
-            payload["dedup_turns"] = self._dedup_turns
-        else:
-            payload["target_uri"] = target_uri
 
         try:
             async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
@@ -382,28 +373,23 @@ class OpenVikingMemoryBackend:
             return []
 
         result_data = data.get("result", data)
+        items = result_data.get("entries", [])
 
-        if use_context:
-            items = result_data.get("entries", [])
-        else:
-            items = result_data.get(
-                "memories", result_data.get("results", [])
-            )
+        items = [
+            it for it in items
+            if "/memories/" in it.get("uri", "")
+        ]
+        if category and category in VALID_CATEGORIES:
+            items = [
+                it for it in items
+                if _category_from_uri(it.get("uri", "")) == category
+            ]
 
         vlm_abstracts: dict[str, str] = {}
         if self._vlm_enabled:
             vlm_abstracts = self._extract_resource_abstracts(
                 result_data.get("resources", [])
             )
-            if not vlm_abstracts and not use_context and items:
-                needs_vlm = any(
-                    not (it.get("abstract") or it.get("l0_summary"))
-                    for it in items
-                )
-                if needs_vlm:
-                    vlm_abstracts = await self._fetch_vlm_abstracts(
-                        query, category, top_k
-                    )
 
         results: list[dict] = []
         for item in items:
@@ -544,32 +530,6 @@ class OpenVikingMemoryBackend:
 
         hits.sort(key=lambda t: t[0], reverse=True)
         return [h[1] for h in hits[:limit]]
-
-    async def _fetch_vlm_abstracts(
-        self, query: str, category: str, top_k: int,
-    ) -> dict[str, str]:
-        """Secondary search on ``resources/memories/`` for VLM abstracts."""
-        resource_target = self._resource_prefix()
-        if category and category in VALID_CATEGORIES:
-            resource_target = f"{resource_target}/{category}"
-        try:
-            async with httpx.AsyncClient(timeout=5.0, http2=True) as client:
-                resp = await client.post(
-                    f"{self._url}/api/v1/search/search",
-                    json={
-                        "query": query,
-                        "target_uri": resource_target,
-                        "limit": top_k,
-                    },
-                    headers=self._headers,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-        except httpx.HTTPError:
-            return {}
-        return self._extract_resource_abstracts(
-            data.get("result", {}).get("resources", [])
-        )
 
     @staticmethod
     def _extract_resource_abstracts(

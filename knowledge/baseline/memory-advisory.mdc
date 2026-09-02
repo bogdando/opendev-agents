@@ -37,7 +37,7 @@ MANDATORY always use progressive disclosure for <prefix>_recall():
 
 ALWAYS recall follow-ups and corrections for confirmed results before
 using it: repeat the noted confirmed L1 or L2 query with a future looking saved_after to
-exclude the confirmed item, and added category="correction".
+exclude the confirmed item, and added category="correction" and using different client_id.
 
 Happy path example:
   recall(query=<task context>, detail_level="L0", top_k=10)

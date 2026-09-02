@@ -365,7 +365,6 @@ class OpenVikingMemoryBackend:
             payload["mode"] = "context"
             payload["session_id"] = session_id
             payload["dedup_turns"] = self._dedup_turns
-            payload["auto_create"] = False
         else:
             payload["target_uri"] = target_uri
 

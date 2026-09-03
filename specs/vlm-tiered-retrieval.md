@@ -484,6 +484,8 @@ backends return full content (L2) as before.
 ## Related documents
 
 - [specs/memory-tools.md](./memory-tools.md) — memory tool design
+- [specs/session-ingest.md](./session-ingest.md) — session commit ingest and
+  `memory://` FS navigation (spec, not implemented)
 - [specs/rag-mcp-server.md](./rag-mcp-server.md) — RAG MCP server design
 - [docs/openviking-comparison.md](../docs/openviking-comparison.md) —
   OV comparison and integration paths

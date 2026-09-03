@@ -348,4 +348,6 @@ rag-mcp-server, memory summaries via OV).
 - [docs/openviking-comparison.md](../docs/openviking-comparison.md) —
   comparison and integration paths
 - [specs/rag-mcp-server.md](./rag-mcp-server.md) — RAG MCP server design
+- [specs/session-ingest.md](./session-ingest.md) — session commit ingest and
+  `memory://` FS navigation (spec, not implemented)
 - [specs/vlm-tiered-retrieval.md](./vlm-tiered-retrieval.md) — L0/L1/L2 tiered retrieval with VLM

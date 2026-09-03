@@ -391,15 +391,15 @@ class TestVlmAbstractEnrichment(unittest.TestCase):
         )
         self.assertEqual(1, client_instance.post.call_count)
 
-    def test_recall_entry_abstract_not_overwritten_by_vlm(self):
-        """Entry with detail=abstract already has l0; VLM doesn't override."""
+    def test_recall_entry_abstract_overwritten_by_vlm(self):
+        """VLM resource abstract overwrites extractive l0 fallback."""
         search_response = {
             "status": "ok",
             "result": {
                 "entries": [{
                     "uri": "viking://user/testuser/memories/learning/doc.md",
                     "score": 0.8,
-                    "text": "Already has abstract",
+                    "text": "Already has extractive fallback",
                     "detail": "abstract",
                 }],
                 "resources": [{
@@ -425,7 +425,7 @@ class TestVlmAbstractEnrichment(unittest.TestCase):
             )
 
         self.assertEqual(
-            "Already has abstract", results[0]["l0_summary"],
+            "VLM resource abstract", results[0]["l0_summary"],
         )
         self.assertEqual(1, client_instance.post.call_count)
 
@@ -2730,6 +2730,146 @@ class TestBm25VsDedupInteraction(unittest.TestCase):
             uris,
         )
         self.assertEqual(2, len(results))
+
+
+    def test_recall_triggers_vlm_backfill_for_old_memories(self):
+        """Lazy VLM: recall triggers VLM enrichment for old memories without l0."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/old.md",
+                    "score": 0.8,
+                    "text": "Old memory content without VLM abstract",
+                    "detail": "full",
+                }],
+                "resources": [],  # No VLM resources for this old memory
+            },
+        }
+        mock_search = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            backend = OpenVikingMemoryBackend(
+                url="http://127.0.0.1:1933",
+                account="default",
+                user="testuser",
+                agent_id="test-agent",
+                vlm_enabled=True,
+            )
+            # Patch _trigger_vlm so we can verify it's called
+            backend._trigger_vlm = AsyncMock()
+
+            results = asyncio.run(
+                backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        # Old memory has no l0_summary since it pre-dates VLM enrichment
+        self.assertIsNone(results[0].get("l0_summary"))
+        # Verify _trigger_vlm was called to trigger VLM backfill
+        backend._trigger_vlm.assert_called_once()
+
+    def test_recall_no_vlm_backfill_if_already_has_l0(self):
+        """Recall skips VLM backfill for memories that already have l0."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/new.md",
+                    "score": 0.8,
+                    "text": "Content",
+                    "detail": "abstract",  # Has abstract
+                }],
+                "resources": [{
+                    "uri": "viking://user/testuser/resources/memories/learning/new.md/new.md",
+                    "score": 0.7,
+                    "abstract": "Existing VLM abstract",
+                }],
+            },
+        }
+        mock_search = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch("asyncio.create_task") as mock_create_task:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            backend = OpenVikingMemoryBackend(
+                url="http://127.0.0.1:1933",
+                account="default",
+                user="testuser",
+                agent_id="test-agent",
+                vlm_enabled=True,
+            )
+
+            results = asyncio.run(
+                backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        # Memory already has l0_summary from VLM resource, no backfill
+        self.assertEqual(
+            "Existing VLM abstract", results[0]["l0_summary"],
+        )
+        # create_task should NOT be called since memory has l0_summary
+        mock_create_task.assert_not_called()
+
+    def test_recall_no_vlm_backfill_if_disabled(self):
+        """Recall skips VLM backfill if VLM is disabled."""
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": "viking://user/testuser/memories/learning/old.md",
+                    "score": 0.8,
+                    "text": "Old memory",
+                    "detail": "full",
+                }],
+                "resources": [],
+            },
+        }
+        mock_search = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls, \
+             patch("asyncio.create_task") as mock_create_task:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            backend = OpenVikingMemoryBackend(
+                url="http://127.0.0.1:1933",
+                account="default",
+                user="testuser",
+                agent_id="test-agent",
+                vlm_enabled=False,  # VLM is disabled
+            )
+
+            results = asyncio.run(
+                backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        # Even though memory lacks l0, backfill is not triggered
+        self.assertIsNone(results[0].get("l0_summary"))
+        # create_task should NOT be called since VLM is disabled
+        mock_create_task.assert_not_called()
 
 
 class TestMemoryPrefix(unittest.TestCase):

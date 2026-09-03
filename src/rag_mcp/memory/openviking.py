@@ -25,6 +25,7 @@ import io
 import logging
 import re
 import uuid
+from _asyncio import Task
 from datetime import UTC, datetime
 
 import httpx
@@ -307,6 +308,7 @@ class OpenVikingMemoryBackend:
             "X-OpenViking-Account": account,
             "X-OpenViking-User": user,
         }
+        self._background_tasks: set[asyncio.Task] = set[Task]()
         if api_key:
             self._headers["X-API-Key"] = api_key
 
@@ -403,7 +405,11 @@ class OpenVikingMemoryBackend:
             mem = _build_memory_dict(
                 raw_text, ov_detail, item, uri, cat, detail_level,
             )
-            if not mem.get("l0_summary") and vlm_abstracts:
+            # Prioritize VLM abstracts over extractive fallback and
+            # previous abstracts (prefer /resources/memories abstracts)
+            # _build_memory_dict may have set l0_summary to raw_text as
+            # a fallback; if a real VLM abstract exists, use that instead.
+            if vlm_abstracts and uri:
                 fname = uri.rsplit("/", 1)[-1] if uri else ""
                 vlm_l0 = vlm_abstracts.get(fname, "")
                 if vlm_l0:
@@ -411,6 +417,27 @@ class OpenVikingMemoryBackend:
             fetch_full = mem.pop("_fetch_full", False)
             if not mem["content"] and uri and (detail_level == "L2" or fetch_full):
                 mem["content"] = await self._read_content(uri)
+
+            # Lazy VLM enrichment: trigger backfill for old memories pre-VLM
+            if (
+                not mem.get("l0_summary")
+                and uri
+                and self._vlm_enabled
+            ):
+                fname = uri.rsplit("/", 1)[-1] if uri else ""
+                full_content = mem.get("content") or raw_text
+                if full_content and fname:
+                    # Fire-and-forget async call to backfill VLM resources
+                    task = asyncio.create_task(
+                        self._trigger_vlm(full_content, cat, fname)
+                    )
+
+                    # Suppress VLM trigger errors
+                    task.add_done_callback(lambda t: t.exception())
+
+                    # avoid GC issues by keeping a reference to the task
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
 
             has_text = (
                 mem["content"]

@@ -85,9 +85,8 @@ Design decisions already locked in (do not revisit here):
 ```mermaid
 graph TD
     subgraph capture ["Capture layer"]
-        Hook["Cursor stop / sessionEnd hook"]
-        Batch["ov-session-ingest CLI / systemd timer"]
         McpTool["memory_commit_session MCP tool"]
+        Batch["ov-session-ingest CLI (batch backfill)"]
         JSONL["agent-transcripts/{uuid}/{uuid}.jsonl"]
     end
 
@@ -127,12 +126,10 @@ graph TD
         Knowledge["knowledge://stores + search()"]
     end
 
-    JSONL --> Hook
     JSONL --> Batch
-    Hook --> Queue
+    JSONL --> McpTool
     Batch --> Map
     McpTool --> Map
-    Queue --> Map
     Map --> Create --> BatchMsg --> Commit
     Commit --> Traj
     Commit --> Mem
@@ -159,7 +156,8 @@ graph TD
 `remember()` depends on agent cooperation (~60% save reliability per
 memory-tools.md). Long debugging sessions produce valuable facts that are
 never persisted. OpenViking's session compressor and commit-time extractor
-solve this in Claude Code via hooks; Cursor has no MCP lifecycle events.
+can solve this — but the ingest trigger must be an MCP tool (or batch CLI),
+not an agent-harness-specific hook.
 
 ### Goal
 
@@ -222,9 +220,9 @@ Do not confuse directly ingested (`ov add-resource`) info (docs, facts, knowledg
 - Both endpoints are read-only analytics over previously committed
   trajectories — they cannot create trajectories.
 
-### Cursor transcript format
+### Agent transcript format
 
-Transcripts live under:
+Transcripts live under an agent-specific path, e.g. for Cursor:
 
 ```
 ~/.cursor/projects/{workspace-slug}/agent-transcripts/{chat-uuid}/{chat-uuid}.jsonl
@@ -249,12 +247,12 @@ Properties relevant to mapping:
 
 ### JSONL → OV message mapping
 
-| Cursor source | OV `AddMessageRequest` | Notes |
-|---------------|------------------------|-------|
+| Transcript source | OV `AddMessageRequest` | Notes |
+|-------------------|------------------------|-------|
 | `role: user`, text parts | `role: user`, `message_kind: user_query` | Strip `<timestamp>`, `<user_query>` wrappers |
 | `role: assistant`, text parts | `role: assistant`, `message_kind: assistant_step` | Concatenate text parts |
 | `role: assistant`, `tool_use` parts | `message_kind: tool_transport` | Serialize as `parts` array; truncate large outputs |
-| Compaction / summary boundary (heuristic) | `message_kind: checkpoint` | Optional; detect `"summary"` or IDE checkpoint markers |
+| Compaction / summary boundary (heuristic) | `message_kind: checkpoint` | Optional; detect `"summary"` or agent checkpoint markers |
 | — | `turn_id` | `{chat_uuid}:{line_index}` or logical turn counter |
 | — | `created_at` | From embedded timestamp or file mtime |
 
@@ -310,25 +308,7 @@ closing the OV session. Not the default.
 
 ### Category mapping
 
-OV's native extractor may emit its own memory types. Post-commit mapping:
-
-| Signal in extracted content | Map to category |
-|----------------------------|-----------------|
-| User preference stated or confirmed | `preference` |
-| Architectural / design choice | `decision` |
-| Root cause, debugging insight | `learning` |
-| User correction of agent mistake | `correction` |
-| Background narrative, session summary | `context` |
-| Multi-step procedure with confirmed success | `workflow` |
-
-Mapping can be:
-
-1. **Trust OV categorization** when it aligns with frontmatter it writes, or
-2. **Heuristic post-pass** in ingest script (keyword rules), or
-3. **LLM classify** (optional, same Ollama instance as summarizer)
-
-Default: trust OV extractor output path; add heuristic pass only if field
-tests show miscategorization.
+None, we maintain status quo for memories, and only extract trajectories from sessions
 
 ### VLM dual-write after ingest
 
@@ -355,33 +335,13 @@ re-commit, or accept duplicates and rely on dedup (configurable).
 
 | Trigger | Reliability | Portability | When to use |
 |---------|-------------|-------------|-------------|
-| **Cursor hook** (`stop` / session end) | High | Cursor only | Primary; enqueue path to ingest worker |
-| **Batch CLI** (`ov-session-ingest`) | Medium | Any | Cron, manual backfill, CI |
-| **MCP `memory_commit_session`** | Low (~60%) | All MCP clients | "Summarize this chat now" on demand |
+| **MCP `memory_commit_session`** | High | All MCP clients | Primary; agent or human invokes the tool at session end |
+| **Batch CLI** (`ov-session-ingest`) | High | Any | Backfill, CI, manual one-off ingest |
 | **Git post-commit hook** | Niche | Repo-scoped | Only when chat tied to commit; not recommended as primary |
 
-MCP has no lifecycle hooks — automatic ingest **requires** a Cursor hook
-(or external file watcher on `agent-transcripts/`). The hook should be
-thin: write one line to the ingest queue, never block the IDE on OV latency.
-
-#### Hook sketch (Cursor)
-
-```json
-{
-  "version": 1,
-  "hooks": {
-    "stop": [
-      {
-        "command": "ov-session-ingest enqueue --transcript \"$CURSOR_TRANSCRIPT_PATH\""
-      }
-    ]
-  }
-}
-```
-
-Exact env var for transcript path TBD (may need wrapper that discovers
-latest JSONL for the active chat). Fallback: glob `agent-transcripts/*/*.jsonl`
-by mtime.
+The primary ingest path is the MCP tool — it works for every agent harness
+that supports MCP, with no harness-specific hooks or bounds required. The
+batch CLI covers backfill and CI scenarios.
 
 #### Ingest queue
 
@@ -395,15 +355,14 @@ Each line:
 {"transcript": "/path/to/{uuid}.jsonl", "enqueued_at": "2026-09-02T12:00:00Z", "status": "pending"}
 ```
 
-Worker (`ov-session-ingest run` or systemd user timer):
+Worker (`ov-session-ingest run`):
 
 1. Dequeue pending entries
 2. Map JSONL → messages
 3. Create/reuse session `ingest-{uuid}`
 4. Batch upload messages
-5. Commit with provenance tags
-6. Trigger VLM dual-write for new URIs
-7. Mark queue entry `done` or `failed` with error
+5. Commit with `categories: ['trajectories']`
+6. Mark queue entry `done` or `failed` with error
 
 ### MCP tool: `memory_commit_session` (optional, phase A3)
 
@@ -443,10 +402,9 @@ Reuses existing `RAG_MCP_OPENVIKING_*` connection settings.
 |-------|-------------|
 | **A0** | `scripts/ov-session-ingest.py` — `ingest`, `enqueue`, `run`, `--dry-run`; constrained commit (`categories: ['trajectories']`) |
 | **A1** | Ingest queue + state file; idempotent hash skip; `GET /api/v1/stats/session/{id}` telemetry collection |
-| **A2** | Agent Evolution API integration — query trajectories and outcomes after commit |
-| **A3** | Cursor hook template + docs; throttled incremental commit (optional) |
-| **A4** | MCP `memory_commit_session` tool |
-| **A5** | Integration tests against live OV (constrained commit + stats + agent evolution queries) |
+| **A2** | MCP `memory_commit_session` tool — primary ingest trigger for agents and humans |
+| **A3** | Agent Evolution API integration — query trajectories and outcomes after commit |
+| **A4** | Integration tests against live OV (constrained commit + stats + agent evolution queries) |
 
 ---
 
@@ -563,10 +521,9 @@ Prefer MCP wrappers because they:
 | Ingest knowledge stores into OV | Blurs knowledge/memory boundary; duplicates `search()` |
 | Expose `resources/memories/` in browse API | Internal VLM dual-write shadow; confuses agents |
 | Replace `recall()` with FS navigation | Semantic search remains primary; browse is complementary |
-| Automatic ingest without hook or batch worker | MCP has no session-end event |
 | Use recall `session_id` for ingest sessions | Would pollute context-mode dedup (`auto_create=False` contract) |
 | Full OV `fs/tree` on user root | Flat memory layout; tree adds token cost without benefit |
-| Claude Code hook plugin port | Out of scope; document coexistence only |
+| Agent-harness-specific hook plugins | Design principle: expose MCP tools only, no harness bounds |
 
 ---
 
@@ -600,9 +557,8 @@ Prefer MCP wrappers because they:
 
 - `scripts/ov-session-ingest.py` — CLI: `ingest`, `enqueue`, `run`, `status`
 - `src/rag_mcp/session_ingest.py` — JSONL mapper, OV session client, queue
-- `src/rag_mcp/memory_tools.py` — optional `memory_commit_session` tool
+- `src/rag_mcp/memory_tools.py` — `memory_commit_session` MCP tool
 - `src/rag_mcp/config.py` — ingest config fields
-- `.cursor-templates/hooks/ov-ingest.json` — hook template
 - `tests/test_session_ingest.py` — mapper unit tests, mock OV commit
 
 ### Track B
@@ -636,14 +592,14 @@ Prefer MCP wrappers because they:
 
 ## Open questions
 
-1. **Cursor hook env**: does Cursor expose transcript path to hooks, or must
-   the hook discover it via workspace slug + latest mtime?
-3. **OV extractor → rag-mcp categories**: commit writes to `viking://~/memories/`
+1. **Transcript discovery**: how does the MCP tool or batch CLI locate the
+   correct JSONL file? Workspace slug + latest mtime glob, or explicit path arg?
+2. **OV extractor → rag-mcp categories**: commit writes to `viking://~/memories/`
    using OV native types (`preferences/`, `events/`, …). Can we skip full extraction
    in OV sessions API?
-4. **Incremental commit**: is throttled `afterAgentResponse` → commit with
+3. **Incremental commit**: is throttled commit with
    `keep_recent_count: 10` worth the complexity for long-running chats?
-5. **Draft memories**: should ingest produce `status=draft` until user
+4. **Draft memories**: should ingest produce `status=draft` until user
    confirms, or trust extractor quality?
 
 ---
@@ -652,5 +608,5 @@ Prefer MCP wrappers because they:
 
 - [specs/memory-tools.md](./memory-tools.md) — `recall()` / `remember()` design
 - [specs/vlm-tiered-retrieval.md](./vlm-tiered-retrieval.md) — L0/L1/L2 tiers
-- [docs/openviking-comparison.md](../docs/openviking-comparison.md) — hooks gap, integration paths
+- [docs/openviking-comparison.md](../docs/openviking-comparison.md) — integration paths
 - [docs/k8s-agentic-landscape.md](../docs/k8s-agentic-landscape.md) — session memory in agentic stack

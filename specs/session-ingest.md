@@ -594,13 +594,20 @@ Prefer MCP wrappers because they:
 
 1. **Transcript discovery**: how does the MCP tool or batch CLI locate the
    correct JSONL file? Workspace slug + latest mtime glob, or explicit path arg?
+   Answer: a harness/agent specific skill may be proposed separately (out of spec scope)
+   to locate session transcripts.
 2. **OV extractor → rag-mcp categories**: commit writes to `viking://~/memories/`
    using OV native types (`preferences/`, `events/`, …). Can we skip full extraction
    in OV sessions API?
 3. **Incremental commit**: is throttled commit with
    `keep_recent_count: 10` worth the complexity for long-running chats?
+   Answer: no, we don't provide timers nor hooks, a human calls mcp tool to commit session
+   and extract traces and metrics just once at the session end, or each time the context
+   compression is about to happen or context window becomes over-filled.
 4. **Draft memories**: should ingest produce `status=draft` until user
    confirms, or trust extractor quality?
+   Answer: no, we only extract telemetry and trajectories omitting opinonated
+   categories extraction (no human review required).
 
 ---
 

@@ -311,6 +311,19 @@ Minimal `~/.openviking/ov.conf`:
 }
 ```
 
+> **NOTE:** When changing an embedding model, you must reindex all OV resources:
+> ```bash
+> systemctl --user stop openviking
+> # change the embedding model/dimensions in ov.conf
+> # clear OV indexes: rm -rf <path to OV vectordb>
+> systemctl --user start openviking
+> ov reindex viking://user/default/resources/memories
+> ```
+> The command may fail, keep monitoring the queue:
+> ```
+> sqlite3 <your system specific path>/data/_system/queue/queue.db "SELECT id, queue_name, status FROM queue_messages;"
+> ```
+
 Start OV alongside rag-mcp-server: `openviking-server --config ~/.openviking/ov.conf`.
 For local embeddings install and start Ollama:
 

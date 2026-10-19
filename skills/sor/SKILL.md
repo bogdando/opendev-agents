@@ -230,7 +230,5 @@ curl -s http://127.0.0.1:7860/gradio_api/info | python3 -m json.tool
 
 ## Troubleshooting
 
-- **Token expired**: Re-run `export VERTEX_API_KEY=$(gcloud auth application-default print-access-token)`.
 - **"Found more than one .rst file"**: The Gerrit change contains multiple files beyond the commit message. The tool expects a single spec file per review.
 - **404 on GitHub lookups**: Normal for specs with no prior release history. The tool continues silently.
-- **API errors**: Check `VERTEX_API_URL` format and that the model endpoint is accessible.

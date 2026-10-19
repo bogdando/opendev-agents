@@ -1,6 +1,26 @@
 ---
 name: spec-summarizer
 description: Summarize and analyze OpenStack design specs from Gerrit reviews using the nova-spec-summarizer tool. Use when the user asks to summarize, analyze, compare, or review an OpenStack spec, or mentions Gerrit spec URLs, cross-project specs, or nova-specs.
+parameters:
+  - key: url
+    input_type: string
+    requirement: required
+    description: "Gerrit review URL for the spec (--url); the tool prompts for it interactively when omitted"
+  - key: specs_repo
+    input_type: string
+    requirement: optional
+    default: "openstack/nova-specs"
+    description: "GitHub org/repo for the specs repository used to look up past approved/implemented specs (--specs-repo)"
+  - key: cross_ref
+    input_type: string
+    requirement: optional
+    default: ""
+    description: "Gerrit review URL for a related cross-project spec to compare against (--cross-ref)"
+  - key: verbose
+    input_type: boolean
+    requirement: optional
+    default: "false"
+    description: "Enable verbose output showing all API calls (-v/--verbose)"
 ---
 
 # OpenStack Spec Summarizer

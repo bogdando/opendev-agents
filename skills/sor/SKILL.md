@@ -23,19 +23,18 @@ Fetch the tool from https://github.com/bogdando/nova-spec-summarizer
 
 Requires `pip install termcolor gradio`, if not shown by `pip freeze`
 
-Always refresh the token before running:
-
-```bash
-export VERTEX_API_KEY=$(gcloud auth application-default print-access-token)
-```
-
 Check if the following environment variables are set before running:
 
 ```bash
-export GERRIT_USER=<gerrit-username>
-export GERRIT_HTTP_PASS=<gerrit-http-password>
-export VERTEX_API_URL=<vertex-ai-endpoint-url>
-export VERTEX_API_KEY=$(gcloud auth application-default print-access-token)
+GERRIT_USER=<gerrit-username>
+GERRIT_HTTP_PASS=<gerrit-http-password>
+LITELLM_URL=<litellm instance outside of a sannfox>
+LITELLM_API_KEY=<not real secret value if in a sandbox>
+LITELLM_MODEL=<model to use>
+```
+
+When `LITELLM_URL` / `LITELLM_API_KEY` are not set, `nova-spec-summarizer.py` falls back to
+`OPENAI_BASE_URL` / `OPENAI_HOST` / `OPENAI_API_KEY`.
 ```
 
 Figure out which arguments to use from the skill arguments list prompted by a user.

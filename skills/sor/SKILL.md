@@ -62,6 +62,11 @@ Ask the user to confirm the suggested command before running it.
 
 ## Usage Patterns In Console Mode
 
+For RHEL OS family:
+```bash
+export CERT_PATH=/etc/pki/tls/certs/ca-bundle.crt
+```
+
 ### 1. Basic: Summarize a single Nova spec
 
 The simplest case — summarize a nova-specs review using the default specs repo.

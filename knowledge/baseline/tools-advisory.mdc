@@ -12,3 +12,7 @@ sufficient context for the task, avoild L2 calls.
 
 MANDATORY always stop any context retrieval and tools calling loops after 5 attempts
 for each call/tool type inside of a single instance of prompt, thinking process, subagent
+
+NEVER install packages or other things (sandbox may block it)
+
+Prefer `python -m pip` over direct pip commands

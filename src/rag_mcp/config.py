@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import AliasChoices, Field, model_validator
@@ -155,6 +156,20 @@ class ServerConfig(BaseSettings):
         if self.summarizer_url:
             return self.summarizer_url
         return self.effective_embedding_url
+
+    @property
+    def effective_summaries_dir(self) -> Path:
+        """Resolve the summaries/sidecars cache directory.
+
+        Relative values (the .summaries-cache default) resolve against
+        the user's home directory, so the global cache is found
+        no matter where the MCP server process was launched from.
+        Absolute values are used as-is.
+        """
+        raw = Path(self.summaries_dir)
+        if raw.is_absolute():
+            return raw
+        return Path.home() / raw
 
     @property
     def proxy_url(self) -> str | None:

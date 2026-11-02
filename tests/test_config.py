@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from rag_mcp.config import ServerConfig
@@ -80,6 +81,21 @@ class TestServerConfig(unittest.TestCase):
     def test_effective_server_name_override(self):
         cfg = ServerConfig(backend="mock", server_name="custom-rag")
         self.assertEqual("custom-rag", cfg.effective_server_name)
+
+    def test_effective_summaries_dir_default_is_global(self):
+        cfg = ServerConfig()
+        self.assertEqual(Path.home() / ".summaries-cache",
+                         cfg.effective_summaries_dir)
+
+    def test_effective_summaries_dir_relative_resolves_to_home(self):
+        cfg = ServerConfig(summaries_dir="my-cache")
+        self.assertEqual(Path.home() / "my-cache",
+                         cfg.effective_summaries_dir)
+
+    def test_effective_summaries_dir_absolute_passthrough(self):
+        cfg = ServerConfig(summaries_dir="/srv/summaries")
+        self.assertEqual(Path("/srv/summaries"),
+                         cfg.effective_summaries_dir)
 
 
 class TestEmptyEnvFallback(unittest.TestCase):

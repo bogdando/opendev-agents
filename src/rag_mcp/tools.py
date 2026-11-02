@@ -130,7 +130,7 @@ def _enrich_with_sidecars(
         if not store_dir.is_dir():
             return
         summaries_path = (
-            Path(app.config.summaries_dir)
+            app.config.effective_summaries_dir
             if app.config.summaries_dir != ".summaries-cache"
             else None
         )
@@ -155,7 +155,7 @@ def _enrich_with_sidecars(
                         app, mgr, file_path, text, file_key
                     )
     else:
-        cache_dir = Path(app.config.summaries_dir)
+        cache_dir = app.config.effective_summaries_dir
         cache_mgr = CacheSidecarManager(cache_dir)
         for r in results:
             doc_id = r.get("metadata", {}).get("doc_id", r.get("source", ""))

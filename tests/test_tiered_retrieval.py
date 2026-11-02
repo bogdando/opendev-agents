@@ -329,6 +329,88 @@ class TestSummarizer(unittest.TestCase):
         bg = BackgroundSummarizer(s, noop)
         self.assertEqual(bg.pending_count, 0)
 
+    def test_strip_thinking_removes_reasoning_block(self):
+        """Reasoning models wrap chain-of-thought in <think&gt;...</think&gt;
+        before the answer; only the text after the closing tag is kept."""
+        from rag_mcp.summarizer import strip_thinking
+
+        content = (
+            "<think&gt;Let me analyze the document step by step. "
+            "First consider... second... finally conclude.</think>\n"
+            "The document describes Nova scheduling filters."
+        )
+        self.assertEqual(
+            strip_thinking(content),
+            "The document describes Nova scheduling filters.",
+        )
+
+    def test_strip_thinking_without_think_block_returns_text(self):
+        """Non-reasoning model output passes through unchanged."""
+        from rag_mcp.summarizer import strip_thinking
+
+        content = "Nova scheduling filters determine host placement."
+        self.assertEqual(strip_thinking(content), content)
+
+    def test_strip_thinking_uses_text_after_last_close_tag(self):
+        """Multiple think blocks: keep only text after the last closing
+        tag, in case the answer itself references one."""
+        from rag_mcp.summarizer import strip_thinking
+
+        content = (
+            "<think&gt;first round</think> interim "
+            "<think&gt;second round</think> final answer"
+        )
+        self.assertEqual(strip_thinking(content), "final answer")
+
+    def test_strip_thinking_answer_only_after_close_tag(self):
+        """A lone closing tag (some servers strip the opener) still
+        yields the text after it."""
+        from rag_mcp.summarizer import strip_thinking
+
+        self.assertEqual(
+            strip_thinking("chain-of-thought</think> The answer."),
+            "The answer.",
+        )
+
+    def test_chat_trims_thinking_from_response(self):
+        """_chat returns only the post-</think&gt; answer for reasoning
+        models and None on request failure."""
+        from rag_mcp.summarizer import Summarizer
+
+        s = Summarizer("http://localhost:11434", "deepseek-r1:8b")
+
+        class FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    "<think&gt;hmm, thinking hard here"
+                                    "</think>\n\nSummarized answer."
+                                )
+                            }
+                        }
+                    ]
+                }
+
+        class FakeClient:
+            async def post(self, url, json):
+                return FakeResp()
+
+        s._client = FakeClient()
+
+        async def run():
+            return await s._chat("sys", "user", 100)
+
+        import asyncio
+
+        answer = asyncio.run(run())
+        self.assertEqual(answer, "Summarized answer.")
+
     def test_extractive_served_before_sidecars_ready(self):
         """On cold start (no sidecars), format_results returns extractive
         approximations immediately. The summarizer is scheduled in the

@@ -16,16 +16,33 @@ logger = logging.getLogger(__name__)
 
 _L0_SYSTEM = (
     "You are a concise summarizer. Produce a single sentence "
-    "(max 100 tokens) capturing the document's main point."
+    "(max 100 tokens) capturing the document's main point. "
+    "Start your response text with <think>Direct answer</think>"
 )
 _L1_SYSTEM = (
     "You are a concise summarizer. Produce a brief overview "
-    "(max 500 words) of the document, preserving key facts and structure."
+    "(max 500 words) of the document, preserving key facts and structure. "
+    "Start your response text with <think>Direct answer</think>"
 )
 
 
 _L0_MAX_TOKENS = 150
 _L1_MAX_TOKENS = 1024
+
+_THINK_CLOSE = "</think>"
+
+
+def strip_thinking(text: str) -> str:
+    """Drop reasoning steps from reasoning-model output.
+
+    Reasoning models (DeepSeek-R1, Qwen3 with thinking enabled) emit
+    chain-of-thought inside <think>...</think> blocks followed
+    by the final answer. Keep only the text after the last closing tag;
+    return the input unchanged when no block is present.
+    """
+    if _THINK_CLOSE in text:
+        text = text.rsplit(_THINK_CLOSE, 1)[-1]
+    return text.strip()
 
 
 class Summarizer:
@@ -68,12 +85,14 @@ class Summarizer:
                         {"role": "user", "content": user},
                     ],
                     "temperature": 0.0,
+                    "allowed_openai_params": ["reasoning_effort"],
+                    "reasoning_effort": "low",
                     "max_tokens": max_tokens,
                 },
             )
             resp.raise_for_status()
             data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
+            return strip_thinking(data["choices"][0]["message"]["content"])
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
             logger.warning("Summarizer request failed: %s", exc)
             return None

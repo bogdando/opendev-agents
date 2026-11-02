@@ -1320,6 +1320,54 @@ class TestListMemories(unittest.TestCase):
         self.assertEqual("item1.md", results[0]["content"])
         self.assertEqual("workflow", results[0]["category"])
 
+    def test_list_ov04_uri_recursive_and_result_list(self):
+        """OV 0.4+ fs/ls: uri+recursive params, bare result list, isDir skip."""
+        ls_response = {
+            "status": "ok",
+            "result": [
+                {
+                    "uri": "viking://user/testuser/memories/context",
+                    "isDir": True,
+                    "modTime": "2026-09-01T16:06:08.000Z",
+                },
+                {
+                    "uri": (
+                        "viking://user/testuser/memories/workflow/"
+                        "20260826T143737Z.md"
+                    ),
+                    "isDir": False,
+                    "modTime": "2026-08-26T14:37:37.000Z",
+                },
+            ],
+        }
+        mock_resp = _mock_response(ls_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.get.return_value = mock_resp
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(self.backend.list_memories())
+
+        client_instance.get.assert_called_with(
+            "http://127.0.0.1:1933/api/v1/fs/ls",
+            params={
+                "uri": "viking://user/testuser/memories",
+                "recursive": "true",
+            },
+            headers=self.backend._headers,
+        )
+        self.assertEqual(1, len(results))  # directory entry skipped
+        self.assertEqual(
+            "viking://user/testuser/memories/workflow/20260826T143737Z.md",
+            results[0]["uri"],
+        )
+        self.assertEqual("workflow", results[0]["category"])
+        self.assertEqual("2026-08-26T14:37:37+00:00", results[0]["saved_at"])
+        self.assertEqual("20260826T143737Z.md", results[0]["content"])
+
     def test_list_respects_limit(self):
         ls_response = {
             "status": "ok",

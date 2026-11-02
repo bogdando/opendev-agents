@@ -776,7 +776,7 @@ class OpenVikingMemoryBackend:
         if category and category in VALID_CATEGORIES:
             list_path = f"{list_path}/{category}"
 
-        params = {"path": list_path}
+        params = {"uri": list_path, "recursive": "true"}
 
         try:
             async with httpx.AsyncClient(timeout=10.0, http2=True) as client:
@@ -791,14 +791,26 @@ class OpenVikingMemoryBackend:
             logger.error("OpenViking list_memories failed: %s", e)
             return []
 
+        raw = data.get("result") or data.get("entries") or data.get("items") or []
+        if isinstance(raw, dict):
+            raw = raw.get("entries") or raw.get("items") or []
+        entries = raw if isinstance(raw, list) else []
+
         results: list[dict] = []
-        for item in data.get("entries", data.get("items", [])):
+        for item in entries:
+            if item.get("isDir"):
+                continue
             uri = item.get("uri", item.get("path", ""))
             results.append(
                 {
-                    "content": item.get("name", ""),
+                    "content": item.get("name")
+                    or (uri.rsplit("/", 1)[-1] if uri else ""),
                     "category": category or _category_from_uri(uri),
-                    "saved_at": _saved_at_from_uri(uri) or item.get("updated_at", ""),
+                    "saved_at": (
+                        _saved_at_from_uri(uri)
+                        or item.get("updated_at")
+                        or item.get("modTime", "")
+                    ),
                     "uri": uri,
                 }
             )

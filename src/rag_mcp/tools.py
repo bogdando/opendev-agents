@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from rag_mcp._app import Context, get_app_context, init_config, mcp
-from rag_mcp.constants import SEARCH_STOP_WORDS
+from rag_mcp.constants import (
+    PNG_SKIP_SMALL_CONTENT_HINT,
+    PNG_WRAP_MIN_CHARS,
+    SEARCH_STOP_WORDS,
+)
 from rag_mcp.formatting import DetailLevel, format_results
 from rag_mcp.sidecars import (
     CacheSidecarManager,
@@ -33,10 +37,16 @@ async def search(
     results are returned as 1568x1568 PNG image frames for dense
     context transfer.
 
-    When PNG wrap is active, results from each store are capped at
-    RAG_MCP_PNG_MAX_CHARS_PER_STORE characters (default 4500) to
-    control vision-token cost per call.  Search multiple stores in
-    separate calls to gather broader context across sources.
+    PNG wrap only engages when the aggregated result text is large
+    enough to benefit from optical compression. Results from each store are
+    capped at RAG_MCP_PNG_MAX_CHARS_PER_STORE characters
+    to control vision-token cost per call. Search multiple
+    stores in separate calls to gather broader context across sources.
+
+    For smaller payloads visual compression is skipped: raw text
+    results are returned instead (within the RAG_MCP_MAX_RESPONSE_CHARS
+    budget), with a hint noting that visual compression was skipped
+    because of small content.
 
     When no results are found, returns recovery hints with suggested
     broader terms and alternative stores.
@@ -78,8 +88,13 @@ async def search(
         if app.config.tiered_retrieval and effective_level != "L2":
             _enrich_with_sidecars(results, vector_store_id, app)
 
-        if app.config.png_wrap and effective_level == "L2":
-            from rag_mcp.png_wrap import wrap_as_images
+        png_requested = app.config.png_wrap and effective_level == "L2"
+        aggregated = (
+            _aggregated_result_chars(results) if png_requested else 0
+        )
+        wrap_png = png_requested and aggregated >= PNG_WRAP_MIN_CHARS
+
+        if wrap_png:
             budget = app.config.png_max_chars_per_store
         else:
             budget = app.config.max_response_chars
@@ -95,8 +110,11 @@ async def search(
                 " Results above matched only the"
                 " other query terms."
             )
-        if app.config.png_wrap and effective_level == "L2":
+        if wrap_png:
+            from rag_mcp.png_wrap import wrap_as_images
             return wrap_as_images(formatted, max_pages=app.config.png_max_pages)
+        if png_requested:
+            formatted += _small_content_hint(aggregated)
         return formatted
 
     return _build_recovery_hints(query, vector_store_id, stores)
@@ -114,6 +132,20 @@ def _resolve_detail_level(
     if level in ("L0", "L1", "L2"):
         return level  # type: ignore[return-value]
     return default.upper()  # type: ignore[return-value]
+
+
+def _aggregated_result_chars(results: list[dict]) -> int:
+    """Total characters of raw result texts across all search hits."""
+    return sum(len(r.get("text") or "") for r in results)
+
+
+def _small_content_hint(aggregated: int) -> str:
+    """Note appended when PNG wrap is skipped for a small payload."""
+    return (
+        "\n\n---\n\n"
+        f"**Note**: {PNG_SKIP_SMALL_CONTENT_HINT} "
+        f"({aggregated} chars aggregated < {PNG_WRAP_MIN_CHARS}"
+    )
 
 
 def _enrich_with_sidecars(

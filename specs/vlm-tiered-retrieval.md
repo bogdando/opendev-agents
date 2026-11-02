@@ -60,7 +60,7 @@ boundary.
 |-------|--------|---------|----------|----------|
 | L0 | ~100 | One-line abstract per result | Never | Browsing, deciding relevance |
 | L1 | ~2000 | Overview paragraph per result | Never | Quick context, enough for most tasks |
-| L2 | full | Complete document content | Yes (if enabled) — both `search()` and `recall()` | Deep reading, code extraction, full procedures |
+| L2 | full | Complete document content | Yes (if enabled) — `search()` only for aggregated results >= 6000 chars (~1500 tokens), `recall()` unconditionally | Deep reading, code extraction, full procedures |
 
 Default: `detail_level="L1"` for both `search()` and `recall()`. Agent
 (or advisory rule) requests L0 for broad scans, L2 for deep dives.
@@ -280,6 +280,22 @@ return formatted
 
 When `detail_level` is L0 or L1, `png_wrap` is bypassed regardless of
 configuration.
+
+#### Small-content fallback (`search()` only)
+
+Knowledge stores search additionally skips visual compression when the
+aggregated result text is too small to benefit from it. When the raw
+result texts from a store search total less than `PNG_WRAP_MIN_CHARS`
+(6000 chars, ~1500 tokens), PNG wrap is not engaged even at L2:
+raw text results are returned instead (within the
+`max_response_chars` budget) with a hint "skipped visual
+compression because of small content". For small payloads raw text
+costs fewer tokens than vision frames and is lossless.
+
+Memory `recall()` keeps engaging PNG wrap at L2 unconditionally when
+enabled: recall payloads are already bounded by
+`png_max_chars_per_store`, and the small-content measurement is
+defined over knowledge store results.
 
 ## Configuration
 

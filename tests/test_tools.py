@@ -272,9 +272,16 @@ class TestRecoveryHintsFormat(unittest.TestCase):
 
 
 class TestSearchPngWrap(unittest.TestCase):
-    """Test that search() returns Image objects when png_wrap=True."""
+    """Test PNG wrap gating and the small-content raw-text fallback."""
 
-    def _run_search_png(self, query, results, stores=None):
+    def _run_search_png(
+        self,
+        query,
+        results,
+        stores=None,
+        png_wrap=True,
+        max_response_chars=50000,
+    ):
         if stores is None:
             stores = [{"id": "docs", "description": "Test store"}]
         mock_backend = mock.AsyncMock()
@@ -282,8 +289,8 @@ class TestSearchPngWrap(unittest.TestCase):
         mock_backend.search.return_value = results
 
         mock_config = mock.MagicMock()
-        mock_config.max_response_chars = 50000
-        mock_config.png_wrap = True
+        mock_config.max_response_chars = max_response_chars
+        mock_config.png_wrap = png_wrap
         mock_config.png_max_pages = 3
         mock_config.png_max_chars_per_store = 4500
         mock_config.tiered_retrieval = False
@@ -309,13 +316,59 @@ class TestSearchPngWrap(unittest.TestCase):
             "sys.modules",
             {"rag_mcp.png_wrap": fake_png_mod},
         ):
-            return asyncio.run(search(mock_ctx, query, "docs"))
+            out = asyncio.run(search(mock_ctx, query, "docs"))
+        return out, fake_wrap
 
     def test_returns_list_when_png_wrap_enabled(self):
-        results = [_make_result(text="some content here")]
-        out = self._run_search_png("content", results)
+        results = [_make_result(text="x" * 6000)]
+        out, mock_wrap = self._run_search_png("content", results)
         self.assertIsInstance(out, list)
         self.assertGreater(len(out), 0)
+        mock_wrap.assert_called_once()
+
+    def test_small_content_falls_back_to_raw_text_with_hint(self):
+        """Aggregated results below the threshold return text + hint."""
+        results = [_make_result(text="some content here")]
+        out, mock_wrap = self._run_search_png("content", results)
+        self.assertIsInstance(out, str)
+        mock_wrap.assert_not_called()
+        self.assertIn(
+            "skipped visual compression because of small content", out
+        )
+        self.assertIn("some content here", out)
+
+    def test_just_below_threshold_returns_text(self):
+        """One char below the threshold still returns raw text."""
+        results = [_make_result(text="x" * 5999)]
+        out, mock_wrap = self._run_search_png("content", results)
+        self.assertIsInstance(out, str)
+        mock_wrap.assert_not_called()
+        self.assertIn(
+            "skipped visual compression because of small content", out
+        )
+
+    def test_hint_absent_when_png_wrap_disabled(self):
+        """No PNG wrap requested — no small-content hint either."""
+        results = [_make_result(text="some content here")]
+        out, mock_wrap = self._run_search_png(
+            "content", results, png_wrap=False
+        )
+        self.assertIsInstance(out, str)
+        mock_wrap.assert_not_called()
+        self.assertNotIn("skipped visual compression", out)
+
+    def test_small_content_uses_text_budget(self):
+        """The raw-text fallback honors the max_response_chars budget."""
+        results = [
+            _make_result(title="Doc 1", text="x" * 2500),
+            _make_result(title="Doc 2", text="y" * 2500),
+        ]
+        out, mock_wrap = self._run_search_png(
+            "content", results, max_response_chars=1000
+        )
+        self.assertIsInstance(out, str)
+        mock_wrap.assert_not_called()
+        self.assertIn("Budget reached", out)
 
     def test_no_results_still_returns_string(self):
         """Recovery hints are plain text even when png_wrap is on."""

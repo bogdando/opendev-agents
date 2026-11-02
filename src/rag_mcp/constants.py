@@ -34,3 +34,15 @@ KEYWORD_FALLBACK_LIST_LIMIT = 200
 # Days to wait before re-submitting a VLM enrichment for content that
 # was already queued successfully.
 ENRICHMENT_RETRY_TTL_DAYS = 3.0
+
+# PNG wrap (optical compression) only engages when the aggregated
+# result text reaches this many characters (~1500 tokens at 4
+# chars/token). Below it, raw text costs fewer tokens than vision
+# frames and preserves fidelity, so search() falls back to text mode.
+PNG_WRAP_MIN_CHARS = 6000
+
+# Hint appended to raw-text search results when PNG wrap was requested
+# but skipped because the aggregated content is below PNG_WRAP_MIN_CHARS.
+PNG_SKIP_SMALL_CONTENT_HINT = (
+    "skipped visual compression because of small content size"
+)

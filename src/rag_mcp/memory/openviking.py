@@ -21,17 +21,22 @@ prefer the URI filename timestamp over listing ``updated_at``.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
+import json
 import logging
 import re
+import time
 import uuid
 from _asyncio import Task
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 
 from rag_mcp.constants import (
     BM25_MERGE_RATIO,
+    ENRICHMENT_RETRY_TTL_DAYS,
     KEYWORD_FALLBACK_LIST_LIMIT,
     LEAD_MATCH_CHARS,
     MIN_KEYWORD_COVERAGE,
@@ -297,6 +302,8 @@ class OpenVikingMemoryBackend:
         api_key: str = "",
         dedup_threshold: float = 0.85,
         vlm_enabled: bool = False,
+        enrichment_ttl_days: float = ENRICHMENT_RETRY_TTL_DAYS,
+        enrichment_cache: str = "~/.vlm-enrichment-attempts.json",
     ) -> None:
         self._url = url.rstrip("/")
         self._account = account
@@ -304,6 +311,11 @@ class OpenVikingMemoryBackend:
         self._agent_id = agent_id
         self._dedup_threshold = dedup_threshold
         self._vlm_enabled = vlm_enabled
+        self._enrichment_ttl = max(0.0, enrichment_ttl_days) * 86400.0
+        self._enrichment_cache_path = Path(enrichment_cache).expanduser()
+        self._enrichment_attempts: dict[str, float] = (
+            self._load_enrichment_cache()
+        )
         self._headers: dict[str, str] = {
             "X-OpenViking-Account": account,
             "X-OpenViking-User": user,
@@ -651,6 +663,43 @@ class OpenVikingMemoryBackend:
             return best
         return None
 
+    def _load_enrichment_cache(self) -> dict[str, float]:
+        """Load ``{attempt_key: epoch_seconds}`` from the cache file."""
+        try:
+            data = json.loads(
+                self._enrichment_cache_path.read_text(encoding="utf-8")
+            )
+            if isinstance(data, dict):
+                return {
+                    str(k): float(v)
+                    for k, v in data.items()
+                    if isinstance(v, (int, float))
+                }
+        except (OSError, ValueError):
+            pass
+        return {}
+
+    def _record_enrichment_attempt(self, key: str) -> None:
+        """Persist an attempt timestamp, pruning entries past the TTL."""
+        now = time.time()
+        cutoff = now - self._enrichment_ttl
+        self._enrichment_attempts = {
+            k: v
+            for k, v in self._enrichment_attempts.items()
+            if v > cutoff
+        }
+        self._enrichment_attempts[key] = now
+        try:
+            self._enrichment_cache_path.parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            self._enrichment_cache_path.write_text(
+                json.dumps(self._enrichment_attempts, sort_keys=True),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.debug("Enrichment cache save failed: %s", exc)
+
     async def _trigger_vlm(
         self, full_content: str, category: str, filename: str,
     ) -> None:
@@ -659,8 +708,29 @@ class OpenVikingMemoryBackend:
         OV's VLM pipeline only runs for resources, not memories.  This
         fire-and-forget call creates a parallel resource so that VLM
         generates L0/L1 abstracts that recall can later pick up.
+
+        Enrichment submissions carry a local TTL backoff (default
+        3 days): once content is successfully queued for a destination,
+        it is not re-submitted until the TTL lapses. The cache key covers
+        the destination URI plus a content digest, so edited documents
+        are re-enriched immediately.
         """
         resource_uri = f"{self._resource_prefix()}/{category}/{filename}"
+        attempt_key = hashlib.sha256(
+            f"{resource_uri}\n{full_content}".encode("utf-8", "replace")
+        ).hexdigest()
+
+        now = time.time()
+        last = self._enrichment_attempts.get(attempt_key, 0.0)
+        if self._enrichment_ttl > 0 and now - last < self._enrichment_ttl:
+            logger.debug(
+                "VLM trigger skipped for %s: submitted %.2f days ago "
+                "(TTL %.1f days)",
+                resource_uri,
+                (now - last) / 86400.0,
+                self._enrichment_ttl / 86400.0,
+            )
+            return
         try:
             async with httpx.AsyncClient(timeout=30.0, http2=True) as client:
                 upload_resp = await client.post(
@@ -688,6 +758,7 @@ class OpenVikingMemoryBackend:
                     headers=self._headers,
                 )
                 add_resp.raise_for_status()
+                self._record_enrichment_attempt(attempt_key)
                 logger.info("VLM trigger: queued %s", resource_uri)
         except httpx.HTTPError as exc:
             logger.warning("VLM trigger failed for %s: %s", resource_uri, exc)

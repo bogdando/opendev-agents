@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
+import time
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -293,12 +296,42 @@ class TestTriggerVlm(unittest.TestCase):
     """Test the fire-and-forget VLM trigger via temp_upload + add_resource."""
 
     def setUp(self):
+        # Per-test cache file: a successful trigger records the attempt,
+        # and tests must not touch the real ~/.vlm-enrichment-attempts.json.
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cache_path = str(Path(self._tmp.name) / "attempts.json")
         self.backend = OpenVikingMemoryBackend(
             url="http://127.0.0.1:1933",
             user="testuser",
             agent_id="test-agent",
             vlm_enabled=True,
+            enrichment_cache=self.cache_path,
         )
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _run_trigger(self, content="full content", category="learning",
+                     filename="20260826T180000Z.md"):
+        """Run one _trigger_vlm with mocked successful posts."""
+        upload_resp = _mock_response({
+            "status": "ok",
+            "result": {"temp_file_id": "upload_abc123.md"},
+        })
+        add_resp = _mock_response({"status": "ok"})
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.side_effect = [upload_resp, add_resp]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(self.backend._trigger_vlm(
+                content, category, filename,
+            ))
+
+        return client_instance
 
     def test_trigger_vlm_calls_temp_upload_and_add_resource(self):
         upload_resp = _mock_response({
@@ -339,6 +372,104 @@ class TestTriggerVlm(unittest.TestCase):
             asyncio.run(self.backend._trigger_vlm(
                 "content", "context", "test.md",
             ))
+
+    def test_trigger_vlm_skips_repeat_within_ttl(self):
+        """A queued enrichment is not re-submitted within the TTL."""
+        client = self._run_trigger()
+        self.assertEqual(2, client.post.call_count)
+        self.assertTrue(Path(self.cache_path).exists())
+
+        client_again = self._run_trigger()
+        self.assertEqual(
+            0, client_again.post.call_count,
+            "repeat submission within the TTL must be skipped",
+        )
+
+    def test_trigger_vlm_retries_after_ttl_expiry(self):
+        """After the TTL lapses the same content is submitted again."""
+        client = self._run_trigger()
+        self.assertEqual(2, client.post.call_count)
+
+        stale = time.time() - 4 * 86400
+        for key in self.backend._enrichment_attempts:
+            self.backend._enrichment_attempts[key] = stale
+
+        client_retry = self._run_trigger()
+        self.assertEqual(
+            2, client_retry.post.call_count,
+            "expired attempt must be re-submitted",
+        )
+
+    def test_trigger_vlm_different_content_not_skipped(self):
+        """Edited content digests differ, so it is re-enriched at once."""
+        client = self._run_trigger(content="original content")
+        self.assertEqual(2, client.post.call_count)
+
+        client_edited = self._run_trigger(content="edited content")
+        self.assertEqual(
+            2, client_edited.post.call_count,
+            "changed content must not be skipped",
+        )
+
+    def test_trigger_vlm_ttl_zero_disables_backoff(self):
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            vlm_enabled=True,
+            enrichment_ttl_days=0,
+            enrichment_cache=self.cache_path,
+        )
+        upload_resp = _mock_response({
+            "status": "ok",
+            "result": {"temp_file_id": "upload_abc123.md"},
+        })
+        add_resp = _mock_response({"status": "ok"})
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.side_effect = [
+                upload_resp, add_resp, upload_resp, add_resp,
+            ]
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(backend._trigger_vlm("c", "context", "same.md"))
+            asyncio.run(backend._trigger_vlm("c", "context", "same.md"))
+
+        self.assertEqual(
+            4, client_instance.post.call_count,
+            "ttl=0 must disable the backoff entirely",
+        )
+
+    def test_enrichment_cache_persists_across_instances(self):
+        """A fresh backend loading the same cache file skips re-submission."""
+        self._run_trigger()
+        self.assertTrue(Path(self.cache_path).exists())
+
+        reborn = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            vlm_enabled=True,
+            enrichment_cache=self.cache_path,
+        )
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.__aenter__ = AsyncMock(return_value=client_instance)
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            asyncio.run(reborn._trigger_vlm(
+                "full content", "learning", "20260826T180000Z.md",
+            ))
+
+        self.assertEqual(
+            0, client_instance.post.call_count,
+            "attempt recorded by a previous instance must be honoured",
+        )
 
 
 class TestVlmAbstractEnrichment(unittest.TestCase):

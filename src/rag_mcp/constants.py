@@ -30,3 +30,7 @@ LEAD_MATCH_CHARS = 160
 # window is not displaced by newer files. Unfiltered recall only sees
 # this many newest files — narrow with saved_after/saved_before.
 KEYWORD_FALLBACK_LIST_LIMIT = 200
+
+# Days to wait before re-submitting a VLM enrichment for content that
+# was already queued successfully.
+ENRICHMENT_RETRY_TTL_DAYS = 3.0

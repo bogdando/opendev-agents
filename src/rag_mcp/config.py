@@ -7,6 +7,8 @@ from typing import Literal
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from rag_mcp.constants import ENRICHMENT_RETRY_TTL_DAYS
+
 
 class ServerConfig(BaseSettings):
     """Configuration for the RAG MCP server.
@@ -94,6 +96,16 @@ class ServerConfig(BaseSettings):
         default=0.85, ge=0.0, le=1.0,
         description="Cosine similarity threshold for write-time dedup. "
         "Memories scoring above this against existing content are skipped.",
+    )
+    openviking_enrichment_ttl_days: float = Field(
+        default=ENRICHMENT_RETRY_TTL_DAYS, ge=0.0,
+        description="Days to skip re-submitting a VLM enrichment for "
+        "content that was already queued successfully. 0 disables backoff.",
+    )
+    openviking_enrichment_cache: str = Field(
+        default="~/.vlm-enrichment-attempts.json",
+        description="Local JSON file caching VLM enrichment attempt "
+        "timestamps, keyed by destination URI and content digest.",
     )
     @property
     def effective_server_name(self) -> str:

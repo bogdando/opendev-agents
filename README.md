@@ -160,6 +160,8 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
 | `RAG_MCP_OPENVIKING_API_KEY` | | OpenViking API key (required when OV binds to non-localhost for sandbox access) |
 | `RAG_MCP_OPENVIKING_DEDUP_THRESHOLD` | `0.85` | Cosine similarity threshold for write-time dedup. Memories scoring above this against existing content are skipped |
+| `RAG_MCP_OPENVIKING_ENRICHMENT_TTL_DAYS` | `3` | Days to skip re-submitting a VLM enrichment for content that was already queued successfully (openviking backend). Breaks the recall re-trigger loop when OpenViking permanently drops a semantic backfill job (expired temp-upload source). `0` disables the backoff |
+| `RAG_MCP_OPENVIKING_ENRICHMENT_CACHE` | `~/.vlm-enrichment-attempts.json` | Local JSON file caching VLM enrichment attempt timestamps, keyed by destination URI and content digest (openviking backend) |
 | `RAG_MCP_EMBEDDING_URL` | | Embedding endpoint base URL (OpenAI-compatible `POST {url}/v1/embeddings`). Auto-derived as `http://127.0.0.1:11434` when `RAG_MCP_MEMORY_BACKEND=openviking`. Empty/unset disables embeddings unless OpenViking auto-derive applies |
 | `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | **Ollama/Llama Stack model id** for `POST /v1/embeddings` (not a search strategy). Must match what the embed service has loaded (`ollama pull nomic-embed-text`). Mismatched model name fallbacks to keyword mode |
 | `RAG_MCP_SOLR_SEARCH_MODE` | `keyword` | **Solr/OKP retrieval strategy only** (ignored by mock/confluence): `keyword` (BM25), `semantic` (vector), or `hybrid` (BM25 + vector). Needs a working embedding client for `semantic`/`hybrid`. Templates default OKP to `hybrid` |

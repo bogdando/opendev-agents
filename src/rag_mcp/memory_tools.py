@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rag_mcp._app import Context, get_app_context, init_config, mcp
+from rag_mcp.constants import PNG_SKIP_SMALL_CONTENT_HINT, PNG_WRAP_MIN_CHARS
 from rag_mcp.formatting import DetailLevel, format_results
 from rag_mcp.memory import VALID_CATEGORIES
 
@@ -38,7 +39,10 @@ async def recall(
         detail_level: Content detail tier — "L0" (one-line abstract),
             "L1" (overview, default), or "L2" (full content). When OV
             has auto_generate_l0/l1 enabled, uses VLM summaries;
-            otherwise extractive fallback. PNG wrap only at L2.
+            otherwise extractive fallback. PNG wrap only at L2,
+            and only when the aggregated memory text is large enough
+            to benefit from optical compression — smaller results
+            return raw text.
         client_id: Override session identifier for recall-time
             dedup. When empty, falls back to transport client_id
             or the server-generated session_id.
@@ -84,15 +88,42 @@ async def recall(
         return f"No memories found for \"{query}\"{hint}."
 
     results = _memories_to_results(memories)
-    budget = app.config.max_response_chars
 
-    if app.config.png_wrap and effective_level == "L2":
+    # Same PNG gating contract as search(): never wrap when the flag
+    # is off, and skip optical compression for small payloads where
+    # raw text costs fewer tokens than vision frames and is lossless.
+    png_requested = app.config.png_wrap and effective_level == "L2"
+    aggregated = (
+        _aggregated_result_chars(results) if png_requested else 0
+    )
+    wrap_png = png_requested and aggregated >= PNG_WRAP_MIN_CHARS
+
+    budget = (
+        app.config.png_max_chars_per_store if wrap_png
+        else app.config.max_response_chars
+    )
+    formatted = format_results(results, budget, detail_level=effective_level)
+
+    if wrap_png:
         from rag_mcp.png_wrap import wrap_as_images
-        budget = app.config.png_max_chars_per_store
-        formatted = format_results(results, budget, detail_level=effective_level)
         return wrap_as_images(formatted, max_pages=app.config.png_max_pages)
+    if png_requested:
+        formatted += _small_content_hint(aggregated)
+    return formatted
 
-    return format_results(results, budget, detail_level=effective_level)
+
+def _aggregated_result_chars(results: list[dict]) -> int:
+    """Total characters of raw memory texts across all recall hits."""
+    return sum(len(r.get("text") or "") for r in results)
+
+
+def _small_content_hint(aggregated: int) -> str:
+    """Note appended when PNG wrap is skipped for a small payload."""
+    return (
+        "\n\n---\n\n"
+        f"**Note**: {PNG_SKIP_SMALL_CONTENT_HINT} "
+        f"({aggregated} chars aggregated < {PNG_WRAP_MIN_CHARS}"
+    )
 
 
 def _memories_to_results(memories: list[dict]) -> list[dict]:

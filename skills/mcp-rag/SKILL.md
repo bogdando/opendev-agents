@@ -59,7 +59,7 @@ running the commands above. The full configuration table:
 | `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
 | `RAG_MCP_CONFLUENCE_SPACE` | | Comma-separated space keys (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted output |
-| `RAG_MCP_PNG_WRAP` | `false` | Return search hits as PNG frames instead of text (L2 only, and only when aggregated results reach 6000 chars / ~1500 tokens — smaller results return raw text with a skip hint) |
+| `RAG_MCP_PNG_WRAP` | `false` | Return search/recall hits as PNG frames instead of text (L2 only, and only when aggregated results reach 6000 chars / ~1500 tokens — smaller results return raw text with a skip hint) |
 | `RAG_MCP_PNG_MAX_PAGES` | `3` | Max PNG frames per search response |
 | `RAG_MCP_PNG_MAX_CHARS_PER_STORE` | `4500` | Char budget per store when PNG wrap engages (small-content fallback uses `RAG_MCP_MAX_RESPONSE_CHARS` instead) |
 | `RAG_MCP_EMBEDDING_URL` | | Embeddings base URL; auto `http://127.0.0.1:11434` if memory is `openviking` |

@@ -511,7 +511,8 @@ class TestSummarizer(unittest.TestCase):
 class TestRecallL2PngWrap(unittest.TestCase):
     """Verify that recall() at L2 with png_wrap=True invokes wrap_as_images."""
 
-    def _run_recall(self, detail_level="L2", png_wrap=True, tiered=True):
+    def _run_recall(self, detail_level="L2", png_wrap=True, tiered=True,
+                    content="Full workflow procedure for GPU passthrough."):
         import asyncio
         from unittest import mock
 
@@ -519,7 +520,7 @@ class TestRecallL2PngWrap(unittest.TestCase):
 
         memories = [
             {
-                "content": "Full workflow procedure for GPU passthrough.",
+                "content": content,
                 "category": "workflow",
                 "saved_at": "2026-08-10T12:00:00Z",
                 "uri": "viking://user/default/memories/workflow/test.md",
@@ -559,9 +560,18 @@ class TestRecallL2PngWrap(unittest.TestCase):
 
     def test_l2_recall_gets_png_payload(self):
         """L2 recall with png_wrap=True returns PNG-wrapped output."""
-        result, mock_wrap = self._run_recall(detail_level="L2", png_wrap=True)
+        result, mock_wrap = self._run_recall(
+            detail_level="L2", png_wrap=True, content="GPU passthrough " * 500
+        )
         mock_wrap.assert_called_once()
         self.assertEqual(result, "<PNG_PAYLOAD>")
+
+    def test_l2_recall_small_content_falls_back_to_text(self):
+        """Small L2 recall payloads skip visual compression for raw text."""
+        result, mock_wrap = self._run_recall(detail_level="L2", png_wrap=True)
+        mock_wrap.assert_not_called()
+        self.assertIn("GPU passthrough", result)
+        self.assertIn("skipped visual compression because of small content", result)
 
     def test_l1_recall_skips_png(self):
         """L1 recall never triggers PNG wrap even when png_wrap=True."""

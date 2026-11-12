@@ -135,6 +135,16 @@ class TestEmptyEnvFallback(unittest.TestCase):
             cfg = ServerConfig()
         self.assertFalse(cfg.png_wrap)
 
+    def test_false_string_env_parses_false(self):
+        """MCP clients (goose/cursor/codex) pass booleans as strings.
+
+        RAG_MCP_PNG_WRAP=false must disable PNG wrap, never enable it.
+        """
+        env = {"RAG_MCP_PNG_WRAP": "false"}
+        with mock.patch.dict(os.environ, env, clear=False):
+            cfg = ServerConfig()
+        self.assertFalse(cfg.png_wrap)
+
     def test_explicit_values_override_defaults(self):
         env = {
             "RAG_MCP_PORT": "9090",

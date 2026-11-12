@@ -143,7 +143,7 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_CONFLUENCE_TOKEN` | | API token (or `CONFLUENCETOKEN`) |
 | `RAG_MCP_CONFLUENCE_SPACE` | | Space keys, e.g. `MYTEAM,MYPROJECT` (or `CONFLUENCESPACE`) |
 | `RAG_MCP_MAX_RESPONSE_CHARS` | `30000` | Budget cap for formatted text output |
-| `RAG_MCP_PNG_WRAP` | `false` | Return search results as 1568x1568 PNG image frames instead of text. Only engages at L2 when the aggregated result text is at least 6000 chars (~1500 tokens); smaller results fall back to raw text |
+| `RAG_MCP_PNG_WRAP` | `false` | Return search and recall results as 1568x1568 PNG image frames instead of text. Only engages at L2 when the aggregated result text is at least 6000 chars (~1500 tokens); smaller results fall back to raw text |
 | `RAG_MCP_PNG_MAX_PAGES` | `3` | Max PNG frames per search response (safety cap) |
 | `RAG_MCP_PNG_MAX_CHARS_PER_STORE` | `4500` | Character budget per store search when PNG wrap engages (large aggregated results only). When PNG wrap is skipped for small content, the `RAG_MCP_MAX_RESPONSE_CHARS` text budget applies instead and a "skipped visual compression because of small content" hint is appended |
 | `RAG_MCP_HOST` | `0.0.0.0` | Host for SSE/HTTP transport |

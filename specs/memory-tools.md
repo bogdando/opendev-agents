@@ -189,7 +189,7 @@ is returned. Knowledge and memories use separate summarization paths:
 |-------|--------|---------|----------|----------|
 | L0 | ~100 | One-line abstract per result | Never | Browsing, deciding relevance |
 | L1 | ~2000 | Overview paragraph per result | Never | Quick context, most tasks |
-| L2 | full | Complete document content | Yes (if enabled) | Deep reading, code extraction |
+| L2 | full | Complete document content | Yes (if enabled) — only for aggregated results >= 6000 chars (~1500 tokens) | Deep reading, code extraction |
 
 Default: `detail_level="L1"`. Agent requests L0 for broad scans, L2 for deep dives.
 

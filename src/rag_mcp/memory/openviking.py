@@ -44,6 +44,7 @@ from rag_mcp.constants import (
 )
 from rag_mcp.formatting import _L0_MAX_TOKENS, _L1_MAX_CHARS
 from rag_mcp.memory import VALID_CATEGORIES
+from rag_mcp.summarizer import strip_thinking
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,17 @@ def _strip_frontmatter(text: str) -> str:
     return text[end + 4:].lstrip("\n")
 
 
+def _sanitize_summary(text: str) -> str:
+    """Strip leaked chain-of-thought from OV/VLM-generated summaries.
+
+    OV's VLM pipeline uses instruct models that may ignore sentinel
+    prompts and leak planning prose ("I'll structure the summary
+    clearly: ...") into abstracts and overviews. Original memory
+    content must never be passed through this helper.
+    """
+    return strip_thinking(_strip_frontmatter(text))
+
+
 def _build_memory_dict(
     raw_text: str,
     ov_detail: str,
@@ -259,22 +271,24 @@ def _build_memory_dict(
         "score": item.get("score"),
     }
 
-    raw_l0 = _strip_frontmatter(
+    raw_l0 = _sanitize_summary(
         item.get("l0_summary") or item.get("abstract") or ""
     )
-    raw_l1 = _strip_frontmatter(
+    raw_l1 = _sanitize_summary(
         item.get("l1_summary") or item.get("overview") or ""
     )
     l0 = raw_l0 if len(raw_l0) < _L0_MAX_CHARS else ""
     l1 = raw_l1 if len(raw_l1) < _L1_MAX_CHARS else ""
 
     if ov_detail == "abstract":
-        l0 = l0 or raw_text
+        # Served text at these tiers is VLM-generated summary output,
+        # not the user's original memory: sanitize it as well.
+        l0 = l0 or _sanitize_summary(raw_text)
         if detail_level == "L1":
-            mem["content"] = raw_text
+            mem["content"] = _sanitize_summary(raw_text)
     elif ov_detail == "overview":
-        l1 = l1 or raw_text
-        mem["content"] = raw_text
+        l1 = l1 or _sanitize_summary(raw_text)
+        mem["content"] = _sanitize_summary(raw_text)
         if not mem["content"] and not l1:
             mem["_fetch_full"] = True
     else:
@@ -586,7 +600,7 @@ class OpenVikingMemoryBackend:
             uri = res.get("uri", "")
             if "/resources/memories/" not in uri:
                 continue
-            raw = _strip_frontmatter(res.get("abstract", ""))
+            raw = _sanitize_summary(res.get("abstract", ""))
             if not raw or len(raw) > _VLM_ABSTRACT_MAX_CHARS:
                 continue
             fname = uri.rsplit("/", 1)[-1] if uri else ""

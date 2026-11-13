@@ -8,41 +8,140 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable, Coroutine
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
+_THINK_OPEN = "<think"
+_THINK_CLOSE = "</think>"
+# Some servers emit the closing tag with a trailing slash; the
+# strip logic accepts either form and cuts after the last
+# occurrence of any variant.
+_THINK_CLOSE_VARIANTS = (_THINK_CLOSE, "</think/>")
+_DIRECT_ANSWER_LABEL = "Direct answer"
+# Sentinel the summarizer prompts ask the model to open its response
+# with, built from the tag constants so the prompt and the strip
+# logic cannot drift apart.
+_SENTINEL = f"{_THINK_OPEN}>{_DIRECT_ANSWER_LABEL}{_THINK_CLOSE}"
+
 _L0_SYSTEM = (
     "You are a concise summarizer. Produce a single sentence "
     "(max 100 tokens) capturing the document's main point. "
-    "Start your response text with <think>Direct answer</think>"
+    "Do not include planning, reasoning or notes about the summary "
+    "itself. "
+    f"Start your response text with {_SENTINEL}"
 )
 _L1_SYSTEM = (
     "You are a concise summarizer. Produce a brief overview "
-    "(max 500 words) of the document, preserving key facts and structure. "
-    "Start your response text with <think>Direct answer</think>"
+    "(max 500 words) of the document, preserving key facts and "
+    "structure. Do not include planning, reasoning or notes about "
+    "the summary itself. "
+    f"Start your response text with {_SENTINEL}"
 )
 
 
 _L0_MAX_TOKENS = 150
 _L1_MAX_TOKENS = 1024
 
-_THINK_CLOSE = "</think>"
+# Sentence starters typical for chain-of-thought planning that models
+# leak as plain prose when they ignore the sentinel prompt (e.g.
+# "I'll structure the summary clearly: ..."). Only leading sentences
+# are matched, so first-person prose mid-summary is preserved.
+_META_STARTERS = (
+    "I'll ", "I'm ", "I'd", "I ", "We ", "We'll ", "We'd ",
+    "Let me ", "Let's ", "Let us ", "Keep it",
+    "Allright, ", "Ok, ", "The user wants ",
+    "The user asks", "The user needs "
+)
+
+# Sentence boundary: [.!?] followed by whitespace. The whitespace is
+# consumed with the following sentence so the retained remainder keeps
+# its original formatting.
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _last_close_tag_end(text: str) -> int:
+    """Index just past the last close tag of any accepted variant,
+    or -1 when the text contains no close tag at all."""
+    end = -1
+    for variant in _THINK_CLOSE_VARIANTS:
+        pos = text.rfind(variant)
+        if pos != -1:
+            end = max(end, pos + len(variant))
+    return end
 
 
 def strip_thinking(text: str) -> str:
     """Drop reasoning steps from reasoning-model output.
 
     Reasoning models (DeepSeek-R1, Qwen3 with thinking enabled) emit
-    chain-of-thought inside <think>...</think> blocks followed
-    by the final answer. Keep only the text after the last closing tag;
-    return the input unchanged when no block is present.
+    chain-of-thought inside <think>...</think> blocks (the closing
+    tag may carry a trailing slash) followed by the final answer.
+    Keep only the text after the last closing tag.
+
+    Two degraded forms are also handled:
+
+    * an unclosed <think> block, or a truncated sentinel prefix
+      ("<think>Direct answer" with no closing tag): keep only the
+      trailing segment after the last opening tag, dropping any
+      leftover label remnant;
+    * no tags at all, with chain-of-thought planning leaked as plain
+      prose ("I'll structure the summary clearly: ..."): leading
+      meta-planning sentences are removed by ``strip_meta_preamble``.
+
+    Return the input unchanged when no reasoning is detected.
     """
-    if _THINK_CLOSE in text:
-        text = text.rsplit(_THINK_CLOSE, 1)[-1]
-    return text.strip()
+
+    end = _last_close_tag_end(text)
+    if end != -1:
+        text = text[end:]
+    elif _THINK_OPEN in text:
+        # Unclosed reasoning block, or the model emitted the opening
+        # half of the sentinel without the closing tag. Best effort:
+        # keep the trailing segment and drop label remnants.
+        text = text.rsplit(_THINK_OPEN, 1)[-1].removeprefix(">").lstrip()
+        if text.startswith(_DIRECT_ANSWER_LABEL):
+            text = text[len(_DIRECT_ANSWER_LABEL):].lstrip(":\n ")
+    return strip_meta_preamble(text.strip())
+
+
+def strip_meta_preamble(text: str) -> str:
+    """Remove leading meta-planning sentences from a summary.
+
+    Models that ignore the sentinel prompt leak chain-of-thought
+    planning as plain text before the actual answer, e.g.
+    ``"I'll structure the summary clearly: ... Keep it factual
+    without markdown, under 500 words."``. Leading sentences whose
+    first words reference the response itself (first-person planning
+    or response-shaping imperatives) are dropped; stripping stops at
+    the first content sentence, so prose that merely contains such
+    phrases mid-text is preserved verbatim.
+
+    Returns the input unchanged when no leading meta sentence matches.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return stripped
+
+    starts = [0]
+    starts.extend(m.end() for m in _SENTENCE_END.finditer(text))
+    kept = 0
+    for i, start in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(text)
+        sentence = text[start:end]
+        if sentence.lstrip().startswith(_META_STARTERS):
+            kept = i + 1
+            continue
+        break
+    if kept == 0:
+        return stripped
+    if kept >= len(starts):
+        # Every sentence was meta-planning; nothing survives.
+        return ""
+    return text[starts[kept]:].lstrip()
 
 
 class Summarizer:
@@ -92,7 +191,12 @@ class Summarizer:
             )
             resp.raise_for_status()
             data = resp.json()
-            return strip_thinking(data["choices"][0]["message"]["content"])
+            content = strip_thinking(
+                data["choices"][0]["message"]["content"]
+            )
+            # An empty result means only reasoning leaked: treat it
+            # as a failed generation so sidecars are not polluted.
+            return content or None
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
             logger.warning("Summarizer request failed: %s", exc)
             return None

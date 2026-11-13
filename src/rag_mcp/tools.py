@@ -148,6 +148,21 @@ def _small_content_hint(aggregated: int) -> str:
     )
 
 
+def _sanitize_cached(summary: str | None) -> str | None:
+    """Clean leaked chain-of-thought from a cached summary.
+
+    Sidecar caches written before sentinel stripping (or by models
+    that ignore it) may hold reasoning preamble ("I'll structure the
+    summary ..."). A summary that sanitizes to nothing is treated as
+    missing so the background summarizer regenerates it.
+    """
+    from rag_mcp.summarizer import strip_thinking
+
+    if not summary:
+        return None
+    return strip_thinking(summary) or None
+
+
 def _enrich_with_sidecars(
     results: list[dict],
     store_id: str,
@@ -172,8 +187,8 @@ def _enrich_with_sidecars(
             file_path = _resolve_mock_file_path(r, knowledge_dir, store_dir)
             if file_path is None:
                 continue
-            l0 = mgr.get_l0(file_path)
-            l1 = mgr.get_l1(file_path)
+            l0 = _sanitize_cached(mgr.get_l0(file_path))
+            l1 = _sanitize_cached(mgr.get_l1(file_path))
             r.setdefault("metadata", {})
             if l0:
                 r["metadata"]["l0_summary"] = l0
@@ -193,8 +208,8 @@ def _enrich_with_sidecars(
             doc_id = r.get("metadata", {}).get("doc_id", r.get("source", ""))
             if not doc_id:
                 continue
-            l0 = cache_mgr.get_l0(doc_id)
-            l1 = cache_mgr.get_l1(doc_id)
+            l0 = _sanitize_cached(cache_mgr.get_l0(doc_id))
+            l1 = _sanitize_cached(cache_mgr.get_l1(doc_id))
             r.setdefault("metadata", {})
             if l0:
                 r["metadata"]["l0_summary"] = l0

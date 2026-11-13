@@ -3062,5 +3062,176 @@ class TestMemoryPrefix(unittest.TestCase):
         self.assertEqual("viking://user/developer/memories", backend._memory_prefix())
 
 
+class TestBuildMemoryDictSanitization(unittest.TestCase):
+    """OV/VLM-generated summaries are sanitized at ingest."""
+
+    def _item(self, **overrides):
+        base = {"saved_at": "2026-08-26", "score": 0.9}
+        base.update(overrides)
+        return base
+
+    def test_item_summary_fields_sanitized(self):
+        """Leaked planning prose in l0/l1 summary fields is removed."""
+        item = self._item(
+            l0_summary=(
+                "I'll write a one-liner. "
+                "Nova placement enables CPU pinning."
+            ),
+            l1_summary=(
+                "I will produce an overview. "
+                "</think>"
+               "The document covers "
+                "placement configuration steps in detail."
+            ),
+        )
+        mem = _build_memory_dict(
+            "Full original content", "full", item,
+            "viking://u/memories/learning/x.md", "learning", "L2",
+        )
+        self.assertEqual(
+            mem["l0_summary"], "Nova placement enables CPU pinning."
+        )
+        self.assertEqual(
+            mem["l1_summary"],
+            "The document covers placement configuration steps in "
+            "detail.",
+        )
+        # Full-tier content is the user's original memory: untouched.
+        self.assertEqual(mem["content"], "Full original content")
+
+    def test_abstract_tier_dirty_text_sanitized(self):
+        """Abstract-tier served text (VLM output) is cleaned for both
+        the l0 fallback and the L1 content."""
+        raw = (
+            "I'll structure the summary clearly: brief intro. "
+            "I need to keep it factual. "
+            "Nova placement tracks resource inventories."
+        )
+        mem = _build_memory_dict(
+            raw, "abstract", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L1",
+        )
+        cleaned = "Nova placement tracks resource inventories."
+        self.assertEqual(mem["l0_summary"], cleaned)
+        self.assertEqual(mem["content"], cleaned)
+
+    def test_overview_tier_dirty_text_sanitized(self):
+        """Overview-tier served text (VLM output) is cleaned for the
+        l1 fallback and content."""
+        raw = (
+            "Let me outline the overview. "
+            "The document explains EDPM node provisioning end to end."
+        )
+        mem = _build_memory_dict(
+            raw, "overview", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L1",
+        )
+        cleaned = "The document explains EDPM node provisioning end to end."
+        self.assertEqual(mem["l1_summary"], cleaned)
+        self.assertEqual(mem["content"], cleaned)
+
+    def test_full_tier_first_person_content_preserved(self):
+        """Original memory content that legitimately starts with
+        first-person prose is never sanitized (full tier)."""
+        raw = "I'll be deploying EDPM nodes next week. Steps follow."
+        mem = _build_memory_dict(
+            raw, "full", self._item(),
+            "viking://u/memories/workflow/x.md", "workflow", "L2",
+        )
+        self.assertEqual(mem["content"], raw)
+
+    def test_pure_preamble_abstract_yields_no_l0(self):
+        """An abstract that is entirely planning prose sanitizes to
+        nothing: no l0 is attached."""
+        mem = _build_memory_dict(
+            "I'll think about it. Let me plan.",
+            "abstract", self._item(),
+            "viking://u/memories/learning/x.md", "learning", "L0",
+        )
+        self.assertNotIn("l0_summary", mem)
+        self.assertEqual(mem["content"], "")
+
+
+class TestVlmAbstractSanitization(unittest.TestCase):
+    """VLM resource abstracts are sanitized before serving."""
+
+    def test_extract_resource_abstracts_strips_preamble(self):
+        """Dirty VLM abstracts are cleaned in the filename map."""
+        resources = [{
+            "uri": (
+                "viking://user/u/resources/memories/learning/doc.md/"
+                "doc.md"
+            ),
+            "score": 0.7,
+            "abstract": (
+                "We need to produce an abstract. "
+                "Nova placement tracks resource inventories."
+            ),
+        }]
+        abstracts = OpenVikingMemoryBackend._extract_resource_abstracts(
+            resources
+        )
+        self.assertEqual(
+            abstracts["doc.md"],
+            "Nova placement tracks resource inventories.",
+        )
+
+    def test_recall_serves_clean_vlm_abstract(self):
+        """End-to-end OV memories path: a dirty VLM abstract in the
+        search response is served clean via l0_summary."""
+        backend = OpenVikingMemoryBackend(
+            url="http://127.0.0.1:1933",
+            user="testuser",
+            agent_id="test-agent",
+            vlm_enabled=True,
+        )
+        search_response = {
+            "status": "ok",
+            "result": {
+                "entries": [{
+                    "uri": (
+                        "viking://user/testuser/memories/learning/doc.md"
+                    ),
+                    "score": 0.8,
+                    "text": "Full content here",
+                    "detail": "full",
+                }],
+                "resources": [{
+                    "uri": (
+                        "viking://user/testuser/resources/memories/"
+                        "learning/doc.md/doc.md"
+                    ),
+                    "score": 0.7,
+                    "abstract": (
+                        "I'll write a short abstract. "
+                        "Nova placement enables dynamic CPU adjustment."
+                    ),
+                }],
+            },
+        }
+        mock_search = _mock_response(search_response)
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            client_instance = AsyncMock()
+            client_instance.post.return_value = mock_search
+            client_instance.__aenter__ = AsyncMock(
+                return_value=client_instance
+            )
+            client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = client_instance
+
+            results = asyncio.run(
+                backend.recall(
+                    "query", detail_level="L0", session_id="s1",
+                )
+            )
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(
+            "Nova placement enables dynamic CPU adjustment.",
+            results[0]["l0_summary"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

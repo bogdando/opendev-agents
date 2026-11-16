@@ -101,7 +101,9 @@ class ServerConfig(BaseSettings):
     openviking_enrichment_ttl_days: float = Field(
         default=ENRICHMENT_RETRY_TTL_DAYS, ge=0.0,
         description="Days to skip re-submitting a VLM enrichment for "
-        "content that was already queued successfully. 0 disables backoff.",
+        "content that was already queued successfully, and to expire "
+        "cached L0/L1 summaries for external backends (solr/confluence) "
+        "so they are regenerated. 0 disables both.",
     )
     openviking_enrichment_cache: str = Field(
         default="vlm-enrichment-attempts.json",

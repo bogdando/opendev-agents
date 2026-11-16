@@ -203,7 +203,9 @@ def _enrich_with_sidecars(
                     )
     else:
         cache_dir = app.config.effective_summaries_dir
-        cache_mgr = CacheSidecarManager(cache_dir)
+        cache_mgr = CacheSidecarManager(
+            cache_dir, ttl_days=app.config.openviking_enrichment_ttl_days
+        )
         for r in results:
             doc_id = r.get("metadata", {}).get("doc_id", r.get("source", ""))
             if not doc_id:

@@ -125,7 +125,7 @@ saying memory is disabled. No overhead.
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OV agent namespace |
 | `RAG_MCP_OPENVIKING_API_KEY` | | OV API key (required for non-localhost / sandbox) |
 | `RAG_MCP_OPENVIKING_DEDUP_THRESHOLD` | `0.85` | Write-time dedup: cosine similarity threshold. Memories scoring above this against existing content are skipped. 0 disables |
-| `RAG_MCP_OPENVIKING_ENRICHMENT_TTL_DAYS` | `3` | VLM enrichment backoff: days to skip re-submitting content that was already queued successfully. Breaks the recall re-trigger loop when OV permanently drops a semantic backfill job (expired temp-upload source). 0 disables |
+| `RAG_MCP_ENRICHMENT_TTL_DAYS` | `3` | VLM enrichment backoff: days to skip re-submitting content that was already queued successfully. Also expires cached L0/L1 summaries in `RAG_MCP_SUMMARIES_DIR` (solr/confluence backends) so they are regenerated. Breaks the recall re-trigger loop when OV permanently drops a semantic backfill job (expired temp-upload source). 0 disables both |
 | `RAG_MCP_OPENVIKING_ENRICHMENT_CACHE` | `<RAG_MCP_SUMMARIES_DIR>/vlm-enrichment-attempts.json` | Local JSON file caching VLM enrichment attempt timestamps, keyed by destination URI and content digest. Relative paths resolve inside `RAG_MCP_SUMMARIES_DIR`; absolute paths are used as-is |
 
 ## OpenViking "memories only" configuration

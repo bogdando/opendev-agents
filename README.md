@@ -160,7 +160,7 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_OPENVIKING_AGENT_ID` | `rag-mcp-server` | OpenViking agent namespace |
 | `RAG_MCP_OPENVIKING_API_KEY` | | OpenViking API key (required when OV binds to non-localhost for sandbox access) |
 | `RAG_MCP_OPENVIKING_DEDUP_THRESHOLD` | `0.85` | Cosine similarity threshold for write-time dedup. Memories scoring above this against existing content are skipped |
-| `RAG_MCP_OPENVIKING_ENRICHMENT_TTL_DAYS` | `3` | Days to skip re-submitting a VLM enrichment for content that was already queued successfully (openviking backend). Breaks the recall re-trigger loop when OpenViking permanently drops a semantic backfill job (expired temp-upload source). `0` disables the backoff |
+| `RAG_MCP_ENRICHMENT_TTL_DAYS` | `3` | Days to skip re-submitting a VLM enrichment for content that was already queued successfully (openviking backend), and to expire cached L0/L1 summaries in `RAG_MCP_SUMMARIES_DIR` (solr/confluence backends) so they are regenerated. Breaks the recall re-trigger loop when OpenViking permanently drops a semantic backfill job (expired temp-upload source). `0` disables both |
 | `RAG_MCP_OPENVIKING_ENRICHMENT_CACHE` | `<RAG_MCP_SUMMARIES_DIR>/vlm-enrichment-attempts.json` | Local JSON file caching VLM enrichment attempt timestamps, keyed by destination URI and content digest (openviking backend). Relative paths resolve inside `RAG_MCP_SUMMARIES_DIR`; absolute paths are used as-is |
 | `RAG_MCP_EMBEDDING_URL` | | Embedding endpoint base URL (OpenAI-compatible `POST {url}/v1/embeddings`). Auto-derived as `http://127.0.0.1:11434` when `RAG_MCP_MEMORY_BACKEND=openviking`. Empty/unset disables embeddings unless OpenViking auto-derive applies |
 | `RAG_MCP_EMBEDDING_MODEL` | `nomic-embed-text` | **Ollama/Llama Stack model id** for `POST /v1/embeddings` (not a search strategy). Must match what the embed service has loaded (`ollama pull nomic-embed-text`). Mismatched model name fallbacks to keyword mode |
@@ -170,7 +170,7 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_SUMMARIZER_URL` | (from `embedding_url`) | Chat completions endpoint for L0/L1 generation (e.g. Ollama or vLLM) |
 | `RAG_MCP_SUMMARIZER_MODEL` | `qwen2.5:7b` | Model for summarization (any chat-capable model) |
 | `RAG_MCP_SUMMARIZER_TIMEOUT` | `180` | HTTP timeout in seconds for summarizer requests. Increase for slow backends (e.g. vLLM on constrained GPUs) |
-| `RAG_MCP_SUMMARIES_DIR` | `.summaries-cache` | Local directory for cached L0/L1 sidecars (solr/confluence backends) |
+| `RAG_MCP_SUMMARIES_DIR` | `.summaries-cache` | Local directory for cached L0/L1 sidecars (solr/confluence backends). Entries older than `RAG_MCP_ENRICHMENT_TTL_DAYS` are regenerated |
 
 ### Supported search backends
 

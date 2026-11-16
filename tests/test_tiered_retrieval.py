@@ -279,6 +279,50 @@ class TestCacheSidecarManager(unittest.TestCase):
         self.assertIsNone(mgr.get_l0("doc789"))
         self.assertEqual(mgr.get_l1("doc789"), "just l1")
 
+    def _age_sidecar(self, doc_id: str, days: float) -> None:
+        """Backdate a sidecar file's mtime to simulate age."""
+        import os
+        import time as _time
+
+        stale = _time.time() - days * 86400
+        for level in ("l0", "l1"):
+            p = self.cache_dir / f"{cache_key(doc_id)}.{level}"
+            if p.exists():
+                os.utime(p, (stale, stale))
+
+    def test_ttl_expires_stale_sidecars(self):
+        """Sidecars older than ttl_days are treated as missing so the
+        background summarizer regenerates them."""
+        mgr = CacheSidecarManager(self.cache_dir, ttl_days=3.0)
+        mgr.write("doc789", "old l0", "old l1")
+        self._age_sidecar("doc789", days=4.0)
+        self.assertIsNone(mgr.get_l0("doc789"))
+        self.assertIsNone(mgr.get_l1("doc789"))
+        self.assertFalse(mgr.has_cache("doc789"))
+
+    def test_ttl_keeps_fresh_sidecars(self):
+        mgr = CacheSidecarManager(self.cache_dir, ttl_days=3.0)
+        mgr.write("doc789", "new l0", "new l1")
+        self.assertEqual(mgr.get_l0("doc789"), "new l0")
+        self.assertEqual(mgr.get_l1("doc789"), "new l1")
+        self.assertTrue(mgr.has_cache("doc789"))
+
+    def test_zero_ttl_disables_expiration(self):
+        mgr = CacheSidecarManager(self.cache_dir, ttl_days=0.0)
+        mgr.write("doc789", "ancient l0", None)
+        self._age_sidecar("doc789", days=365.0)
+        self.assertEqual(mgr.get_l0("doc789"), "ancient l0")
+
+    def test_rewrite_after_expiry_restores_cache(self):
+        """Regeneration refreshes mtime, making the entry fresh again."""
+        mgr = CacheSidecarManager(self.cache_dir, ttl_days=3.0)
+        mgr.write("doc789", "old", None)
+        self._age_sidecar("doc789", days=4.0)
+        self.assertIsNone(mgr.get_l0("doc789"))
+        mgr.write("doc789", "regenerated", None)
+        self.assertEqual(mgr.get_l0("doc789"), "regenerated")
+        self.assertTrue(mgr.has_cache("doc789"))
+
     def test_url_doc_id_writes_flat_hashed_file(self):
         url = "https://access.redhat.com/solutions/3109111"
         mgr = CacheSidecarManager(self.cache_dir)
@@ -307,6 +351,73 @@ class TestCacheSidecarManager(unittest.TestCase):
         traversal = cache_key("../etc/passwd")
         self.assertEqual(len(traversal), 32)
         self.assertNotIn("..", traversal)
+
+
+class TestSummariesCacheExpirationWiring(unittest.TestCase):
+    """RAG_MCP_ENRICHMENT_TTL_DAYS must flow from config
+    through _enrich_with_sidecars into the okp/solr summaries cache."""
+
+    class _FakeApp:
+        def __init__(self, config, bg_summarizer=None):
+            self.config = config
+            self.bg_summarizer = bg_summarizer
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.cache_dir = Path(self._tmpdir.name)
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _make_app(self):
+        from rag_mcp.config import ServerConfig
+
+        cfg = ServerConfig(
+            backend="solr",
+            summaries_dir=str(self.cache_dir),
+            openviking_enrichment_ttl_days=3.0,
+        )
+        return self._FakeApp(cfg, bg_summarizer=None)
+
+    def _enrich(self, app, doc_id):
+        from rag_mcp.tools import _enrich_with_sidecars
+
+        results = [
+            {
+                "text": "Nova scheduling filters determine host placement.",
+                "source": doc_id,
+                "metadata": {"doc_id": doc_id},
+            }
+        ]
+        _enrich_with_sidecars(results, "store", app)
+        return results[0].get("metadata", {})
+
+    def test_expired_sidecar_not_served_for_solr(self):
+        import os
+        import time as _time
+
+        app = self._make_app()
+        mgr = CacheSidecarManager(self.cache_dir, ttl_days=3.0)
+        mgr.write("doc789", "stale l0", "stale l1")
+        stale = _time.time() - 4.0 * 86400
+        for level in ("l0", "l1"):
+            os.utime(
+                self.cache_dir / f"{cache_key('doc789')}.{level}",
+                (stale, stale),
+            )
+
+        meta = self._enrich(app, "doc789")
+        self.assertNotIn("l0_summary", meta)
+        self.assertNotIn("l1_summary", meta)
+
+    def test_fresh_sidecar_served_for_solr(self):
+        app = self._make_app()
+        mgr = CacheSidecarManager(self.cache_dir, ttl_days=3.0)
+        mgr.write("doc789", "fresh l0", "fresh l1")
+
+        meta = self._enrich(app, "doc789")
+        self.assertEqual(meta.get("l0_summary"), "fresh l0")
+        self.assertEqual(meta.get("l1_summary"), "fresh l1")
 
 
 class TestSummarizer(unittest.TestCase):

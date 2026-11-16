@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -141,11 +142,14 @@ class CacheSidecarManager:
     """Manages L0/L1 cache for external backends (Solr/Confluence).
 
     Uses a flat cache directory keyed by document ID since there's no
-    local file to place sidecars alongside.
+    local file to place sidecars alongside. Sidecars whose file mtime
+    is older than ``ttl_days`` are treated as missing so the background
+    summarizer regenerates them; ``ttl_days=0`` disables expiration.
     """
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, ttl_days: float = 0.0) -> None:
         self._dir = cache_dir
+        self._ttl = max(0.0, ttl_days) * 86400.0
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def get_l0(self, doc_id: str) -> str | None:
@@ -159,12 +163,21 @@ class CacheSidecarManager:
 
     def _read(self, doc_id: str, level: str) -> str | None:
         path = self._path(doc_id, level)
-        if path.exists():
+        if path.exists() and not self._expired(path):
             try:
                 return path.read_text(encoding="utf-8")
             except OSError:
                 return None
         return None
+
+    def _expired(self, path: Path) -> bool:
+        """True when the sidecar mtime is older than the TTL."""
+        if self._ttl <= 0.0:
+            return False
+        try:
+            return (time.time() - path.stat().st_mtime) > self._ttl
+        except OSError:
+            return True
 
     def write(self, doc_id: str, l0: str | None, l1: str | None) -> None:
         if l0 is not None:
@@ -177,6 +190,8 @@ class CacheSidecarManager:
             p.write_text(l1, encoding="utf-8")
 
     def has_cache(self, doc_id: str) -> bool:
-        return self._path(doc_id, "l0").exists() or self._path(
-            doc_id, "l1"
-        ).exists()
+        """True when a readable, unexpired sidecar exists."""
+        return (
+            self._read(doc_id, "l0") is not None
+            or self._read(doc_id, "l1") is not None
+        )

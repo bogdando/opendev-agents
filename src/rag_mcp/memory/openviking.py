@@ -317,7 +317,7 @@ class OpenVikingMemoryBackend:
         dedup_threshold: float = 0.85,
         vlm_enabled: bool = False,
         enrichment_ttl_days: float = ENRICHMENT_RETRY_TTL_DAYS,
-        enrichment_cache: str = "~/.vlm-enrichment-attempts.json",
+        enrichment_cache: str = "vlm-enrichment-attempts.json",
     ) -> None:
         self._url = url.rstrip("/")
         self._account = account

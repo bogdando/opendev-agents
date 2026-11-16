@@ -104,9 +104,10 @@ class ServerConfig(BaseSettings):
         "content that was already queued successfully. 0 disables backoff.",
     )
     openviking_enrichment_cache: str = Field(
-        default="~/.vlm-enrichment-attempts.json",
+        default="vlm-enrichment-attempts.json",
         description="Local JSON file caching VLM enrichment attempt "
-        "timestamps, keyed by destination URI and content digest.",
+        "timestamps, keyed by destination URI and content digest. "
+        "Relative paths resolve inside RAG_MCP_SUMMARIES_DIR.",
     )
     @property
     def effective_server_name(self) -> str:
@@ -170,6 +171,21 @@ class ServerConfig(BaseSettings):
         if raw.is_absolute():
             return raw
         return Path.home() / raw
+
+    @property
+    def effective_openviking_enrichment_cache(self) -> Path:
+        """Resolve the VLM enrichment attempt cache file.
+
+        Absolute paths (after ``~`` expansion) are used as-is. Relative
+        values (the vlm-enrichment-attempts.json default) resolve inside
+        effective_summaries_dir, colocating the enrichment backoff state
+        with the L0/L1 sidecar cache instead of a dotfile in whatever
+        $HOME the server process happens to run with.
+        """
+        raw = Path(self.openviking_enrichment_cache).expanduser()
+        if raw.is_absolute():
+            return raw
+        return self.effective_summaries_dir / raw
 
     @property
     def proxy_url(self) -> str | None:

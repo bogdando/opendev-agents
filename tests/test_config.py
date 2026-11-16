@@ -97,6 +97,41 @@ class TestServerConfig(unittest.TestCase):
         self.assertEqual(Path("/srv/summaries"),
                          cfg.effective_summaries_dir)
 
+    def test_effective_enrichment_cache_default_in_summaries_dir(self):
+        cfg = ServerConfig()
+        self.assertEqual(
+            Path.home() / ".summaries-cache" / "vlm-enrichment-attempts.json",
+            cfg.effective_openviking_enrichment_cache,
+        )
+
+    def test_effective_enrichment_cache_follows_summaries_dir(self):
+        cfg = ServerConfig(summaries_dir="/srv/summaries")
+        self.assertEqual(
+            Path("/srv/summaries/vlm-enrichment-attempts.json"),
+            cfg.effective_openviking_enrichment_cache,
+        )
+
+    def test_effective_enrichment_cache_absolute_passthrough(self):
+        cfg = ServerConfig(
+            openviking_enrichment_cache="/var/cache/attempts.json"
+        )
+        self.assertEqual(
+            Path("/var/cache/attempts.json"),
+            cfg.effective_openviking_enrichment_cache,
+        )
+
+    def test_openviking_backend_receives_resolved_cache_path(self):
+        from rag_mcp.memory import get_memory_backend
+
+        cfg = ServerConfig(
+            memory_backend="openviking", summaries_dir="/srv/summaries"
+        )
+        backend = get_memory_backend(cfg)
+        self.assertEqual(
+            Path("/srv/summaries/vlm-enrichment-attempts.json"),
+            backend._enrichment_cache_path,
+        )
+
 
 class TestEmptyEnvFallback(unittest.TestCase):
     """Empty-string env vars fall back to field defaults."""

@@ -279,6 +279,7 @@ def _schedule_sidecar_generation(app, mgr: SidecarManager, file_path: Path, text
         Summarizer(
             summarizer_url, app.config.summarizer_model,
             timeout=app.config.summarizer_timeout,
+            api_key=app.config.summarizer_api_key,
         ),
         on_complete,
     )
@@ -300,6 +301,7 @@ def _schedule_cache_generation(app, cache_mgr: CacheSidecarManager, doc_id: str,
         Summarizer(
             summarizer_url, app.config.summarizer_model,
             timeout=app.config.summarizer_timeout,
+            api_key=app.config.summarizer_api_key,
         ),
         on_complete,
     )

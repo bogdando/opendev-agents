@@ -285,5 +285,33 @@ class TestBackendFactory(unittest.TestCase):
         )
 
 
+    def test_summarizer_api_key_from_env(self):
+        """RAG_MCP_SUMMARIZER_API_KEY populates the bearer token."""
+        with mock.patch.dict(
+            os.environ,
+            {"RAG_MCP_SUMMARIZER_API_KEY": "tok-123"},
+            clear=True,
+        ):
+            cfg = ServerConfig()
+        self.assertEqual("tok-123", cfg.summarizer_api_key)
+
+    def test_summarizer_api_key_defaults_empty(self):
+        """Unset key keeps the summarizer client header-less."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            cfg = ServerConfig()
+        self.assertEqual("", cfg.summarizer_api_key)
+
+    def test_empty_summarizer_api_key_env_treated_as_default(self):
+        """An empty-string env var reads as unset (validator maps it
+        back to the default) so local backends stay header-less."""
+        with mock.patch.dict(
+            os.environ,
+            {"RAG_MCP_SUMMARIZER_API_KEY": ""},
+            clear=True,
+        ):
+            cfg = ServerConfig()
+        self.assertEqual("", cfg.summarizer_api_key)
+
+
 if __name__ == "__main__":
     unittest.main()

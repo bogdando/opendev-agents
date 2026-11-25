@@ -78,6 +78,7 @@ async def _app_lifespan(server: FastMCP) -> AsyncIterator[dict]:
             summarizer = Summarizer(
                 summarizer_url, config.summarizer_model,
                 timeout=config.summarizer_timeout,
+                api_key=config.summarizer_api_key,
             )
 
             async def _noop_callback(

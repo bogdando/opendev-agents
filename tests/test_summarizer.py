@@ -225,6 +225,64 @@ class TestBackgroundSummarizerCleanOutput(unittest.TestCase):
         self.assertEqual(captured["l1"], _REPORTED_CLEAN)
 
 
+class TestSummarizerApiKey(unittest.TestCase):
+    """RAG_MCP_SUMMARIZER_API_KEY: bearer auth for gated endpoints.
+
+    Chat-completions backends behind authenticated gateways (vLLM or
+    LiteLLM proxies, hosted APIs) require a bearer token; local
+    Ollama-style deployments must not send any Authorization header.
+    """
+
+    def test_api_key_sets_bearer_header(self):
+        """A configured key lands on the client as a bearer token."""
+        s = Summarizer(
+            "http://localhost:8000", "granite", api_key="s3cr3t"
+        )
+        self.assertEqual(
+            s._client.headers["Authorization"], "Bearer s3cr3t"
+        )
+
+    def test_no_api_key_sends_no_auth_header(self):
+        """The default (unset key) stays header-less for local
+        backends."""
+        s = Summarizer("http://localhost:8000", "granite")
+        self.assertNotIn("Authorization", s._client.headers)
+
+    def test_empty_api_key_sends_no_auth_header(self):
+        """An explicitly empty key is treated as unset."""
+        s = Summarizer(
+            "http://localhost:8000", "granite", api_key=""
+        )
+        self.assertNotIn("Authorization", s._client.headers)
+
+    def test_bearer_header_sent_on_request(self):
+        """The header reaches the wire: httpx merges client headers
+        into every request the chat endpoint fires."""
+        import httpx
+
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["auth"] = request.headers.get("Authorization")
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}]},
+            )
+
+        s = Summarizer(
+            "http://localhost:8000", "granite", api_key="tok-123"
+        )
+        s._client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            headers={"Authorization": "Bearer tok-123"},
+        )
+
+        answer = asyncio.run(s.generate_l0("document text"))
+
+        self.assertEqual(answer, "ok")
+        self.assertEqual(captured["auth"], "Bearer tok-123")
+
+
 class TestCachedSidecarSanitization(unittest.TestCase):
     """Knowledge-RAG read path: dirty cached sidecars are cleaned."""
 

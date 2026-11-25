@@ -84,6 +84,7 @@ class ServerConfig(BaseSettings):
     summarizer_url: str = ""
     summarizer_model: str = "qwen2.5:7b"
     summarizer_timeout: float = 180.0
+    summarizer_api_key: str = ""
     summaries_dir: str = ".summaries-cache"
 
     memory_backend: Literal["local", "openviking", "none"] = "none"

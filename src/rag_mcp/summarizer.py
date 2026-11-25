@@ -148,11 +148,16 @@ class Summarizer:
     """Generates L0/L1 text summaries via chat completions."""
 
     def __init__(
-        self, base_url: str, model: str, timeout: float = 180.0
+        self,
+        base_url: str,
+        model: str,
+        timeout: float = 180.0,
+        api_key: str = "",
     ) -> None:
         self._url = f"{base_url.rstrip('/')}/v1/chat/completions"
         self._model = model
-        self._client = httpx.AsyncClient(timeout=timeout)
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self._client = httpx.AsyncClient(timeout=timeout, headers=headers)
 
     async def generate_l0(self, text: str) -> str | None:
         """Generate a one-sentence abstract (~100 tokens)."""

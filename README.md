@@ -170,6 +170,7 @@ All servers use the same `rag-mcp-server` binary. The [@mcp-rag](./skills/mcp-ra
 | `RAG_MCP_SUMMARIZER_URL` | (from `embedding_url`) | Chat completions endpoint for L0/L1 generation (e.g. Ollama or vLLM) |
 | `RAG_MCP_SUMMARIZER_MODEL` | `qwen2.5:7b` | Model for summarization (any chat-capable model) |
 | `RAG_MCP_SUMMARIZER_TIMEOUT` | `180` | HTTP timeout in seconds for summarizer requests. Increase for slow backends (e.g. vLLM on constrained GPUs) |
+| `RAG_MCP_SUMMARIZER_API_KEY` | | Bearer token sent as `Authorization: Bearer <key>` header on L0/L1 summarizer requests. Set when the chat completions endpoint sits behind an authenticated gateway (e.g. vLLM/LiteLLM proxies or hosted APIs); leave unset for local Ollama |
 | `RAG_MCP_SUMMARIES_DIR` | `.summaries-cache` | Local directory for cached L0/L1 sidecars (solr/confluence backends). Entries older than `RAG_MCP_ENRICHMENT_TTL_DAYS` are regenerated |
 
 ### Supported search backends
